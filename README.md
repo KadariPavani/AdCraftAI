@@ -4,74 +4,127 @@ A Retrieval-Augmented Generation pipeline that uses 61,576 real advertisement im
 
 ---
 
-## Essential Files
+## Project Structure
 
-| File | Purpose |
-|------|---------|
-| `.env` | API keys (Google, HuggingFace, Anthropic) |
-| `01_load_dataset.py` | Scan images → metadata CSV |
-| `02_generate_embeddings.py` | Images → CLIP 512-D embeddings |
-| `03_build_faiss_index.py` | Embeddings → FAISS vector index |
-| `09_pamphlet_pipeline.py` | End-to-end RAG pipeline (daily use) |
+```
+MAdVerse/
+├── app/
+│   ├── main.py              # FastAPI backend (API endpoints)
+│   ├── pipeline.py           # Core ad generation pipeline (v2)
+│   └── static/
+│       └── index.html        # Web frontend UI
+├── data/
+│   ├── annotations/          # JSON metadata (13 MB)
+│   └── images/               # 61,576 ad images (~35 GB)
+│       ├── Advert_Gallery/
+│       ├── OnlineAds/
+│       ├── Epaper1/
+│       └── Epaper2/
+├── embeddings/
+│   ├── image_embeddings.pkl  # CLIP embeddings (281 MB)
+│   └── faiss_indexes/        # FAISS index + metadata (130 MB)
+├── processed/
+│   └── metadata/
+│       └── madverse_metadata.csv  # Dataset metadata (61,592 rows)
+├── outputs/                  # Generated ads (auto-created)
+├── uploads/                  # User uploads (auto-created)
+├── products_db/              # SQLite product catalog (auto-created)
+├── DatasetLoad.py            # Step 1: Scan images → metadata CSV
+├── GenerateEmbeddings.py     # Step 2: Images → CLIP embeddings
+├── BuildFAISS.py             # Step 3: Embeddings → FAISS index
+├── RAGPipeline.py            # Legacy pipeline (paid APIs)
+├── run.py                    # Launch the web app
+├── requirements.txt          # Python dependencies
+└── .env                      # API keys (optional, not needed for v2)
+```
+
+---
+
+## Quick Start
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Launch the web app
+python run.py
+```
+
+Open **http://localhost:8000** in your browser.
+
+> No API keys required — the current pipeline uses free services (Pollinations.ai).
 
 ---
 
 ## One-Time Setup (Index Building)
 
-**Step 1** — `python 01_load_dataset.py`
+Only needed if rebuilding from scratch. Pre-built indexes are included.
+
+**Step 1** — `python DatasetLoad.py`
 - Scans 4 source folders (Advert_Gallery, OnlineAds, Epaper1, Epaper2)
 - Extracts category/subcategory/brand from JSON annotations
-- Outputs: `processed/metadata/madverse_metadata.csv` (61,576 rows, 492 brands)
+- Outputs: `processed/metadata/madverse_metadata.csv` (61,592 rows, 492 brands)
 
-**Step 2** — `python 02_generate_embeddings.py`
+**Step 2** — `python GenerateEmbeddings.py`
 - Loads all 61,576 images through CLIP (`openai/clip-vit-base-patch32`)
 - Generates L2-normalized 512-D embeddings per image
-- Outputs: `embeddings/image_embeddings.pkl` (294 MB)
+- Outputs: `embeddings/image_embeddings.pkl` (281 MB)
+- Includes checkpoint system for resuming interrupted runs
 
-**Step 3** — `python 03_build_faiss_index.py`
+**Step 3** — `python BuildFAISS.py`
 - Loads embeddings, builds FAISS `IndexFlatL2(512)` index
 - Outputs: `embeddings/faiss_indexes/madverse_index.faiss` + `id_to_metadata.pkl`
 
 ---
 
-## Daily Usage — Ad Generation
+## Web App Features
 
-```
-python 09_pamphlet_pipeline.py "nike running shoes"
-```
+The FastAPI web application (`run.py`) provides:
+
+- **Ad Generation** — Text prompt + optional image → full ad creative
+- **Product Catalog** — CRUD operations for managing products
+- **Image Enhancement** — Brightness, contrast, sharpness adjustments
+- **Multi-Language Captions** — 25+ languages via deep_translator
+- **Shareable Hub Pages** — Public product pages with analytics tracking
+
+### API Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/generate` | POST | Generate ad from text + optional image |
+| `/api/products` | GET/POST | Product catalog CRUD |
+| `/api/enhance` | POST | Image enhancement |
+| `/api/captions` | POST | Multi-language caption generation |
+| `/hub/{product_id}` | GET | Public shareable product page |
+
+---
+
+## Pipeline Stages
 
 ### Stage 0 — Brand Matching
 - Fuzzy-matches query text against 492 known brands
-- Identifies target brand (e.g., "Nike") for filtered retrieval
+- Identifies target brand for filtered retrieval
 
 ### Stage 1 — RAG Retrieval (CLIP + FAISS)
 - Encodes query text into a 512-D CLIP embedding
-- Builds a brand-filtered sub-index from FAISS (only target brand vectors)
+- Builds a brand-filtered sub-index from FAISS
 - Retrieves top 5 most similar ad images from the dataset
 - Extracts dominant colors via KMeans clustering
 
-### Stage 2 — Ad Analysis (Gemini Vision RAG)
-- Sends the 5 retrieved ad images to Gemini 2.0 Flash Vision
-- Gemini extracts: tagline, product features, visual style, mood, color palette
-- Gemini generates a detailed diffusion prompt for new ad creation
-- Fallback chain: Gemini Vision → CLIP Descriptor RAG → Brand Knowledge Base
+### Stage 2 — Content Generation (Pollinations.ai LLM)
+- Generates taglines, feature highlights, and ad copy
+- Crafts a detailed diffusion prompt for image generation
 
-### Stage 3 — Image Generation (FLUX.1)
-- Sends the LLM-crafted diffusion prompt to FLUX.1 model
-- Routes: Pollinations.ai (free) → HuggingFace Inference API
-- Generates a new product image based on the retrieved ad context
+### Stage 3 — Image Generation (Pollinations.ai Diffusion)
+- Generates a new product image from the LLM-crafted prompt
+- Free, no API key required
 
 ### Stage 4 — Pamphlet Compositing
-- AI-driven 3x3 grid layout analysis for optimal text/logo placement
-- Fetches brand logo from web (Clearbit + Google Favicon)
-- Composes a 1080x1080 professional pamphlet with:
-  - Full-bleed gradient background (brand colors)
-  - Hero product image with rounded corners + shadow
-  - Bold brand name (Impact font, multi-layer outline)
-  - Tagline, feature highlights, CTA button
-  - Reference thumbnails from retrieved dataset ads
-
-**Output**: Final pamphlet saved to `outputs/` folder as PNG
+- Full-bleed gradient background using brand colors
+- Hero product image with rounded corners + shadow
+- Bold brand name, tagline, feature highlights, CTA button
+- Reference thumbnails from retrieved dataset ads
+- Output: 1080x1080 PNG saved to `outputs/`
 
 ---
 
@@ -81,20 +134,21 @@ python 09_pamphlet_pipeline.py "nike running shoes"
 Query Text ──→ CLIP Embedding ──→ FAISS Search ──→ Top 5 Real Ads
                                                         │
                                                         ▼
-                                                  Gemini Vision
-                                                  analyzes them
+                                                  Color Extraction
+                                                  (KMeans clustering)
                                                         │
                                                         ▼
-                                              Text descriptions +
-                                              diffusion prompt
+                                                Pollinations.ai LLM
+                                                generates ad copy +
+                                                  diffusion prompt
                                                         │
                                                         ▼
-                                                FLUX.1 generates
-                                                  new ad image
+                                              Pollinations.ai Diffusion
+                                                generates product image
                                                         │
                                                         ▼
-                                              PamphletComposer
-                                              creates final ad
+                                                PamphletComposer
+                                                creates final ad
 ```
 
 ---
@@ -102,6 +156,18 @@ Query Text ──→ CLIP Embedding ──→ FAISS Search ──→ Top 5 Real 
 ## Requirements
 
 - Python 3.10+
-- CUDA-capable GPU (recommended for CLIP embedding generation)
-- API keys: Google Gemini, HuggingFace, Anthropic (optional)
+- CUDA-capable GPU (recommended for CLIP embedding generation only)
 - MAdVerse dataset (61,576 ad images with JSON annotations)
+- No API keys needed — uses free Pollinations.ai services
+
+### Key Dependencies
+
+```
+torch, torchvision       # PyTorch (CLIP model)
+transformers              # HuggingFace (CLIP)
+faiss-cpu                 # Vector search
+fastapi, uvicorn          # Web server
+Pillow, opencv-python     # Image processing
+deep-translator           # Multi-language support
+scikit-learn              # KMeans clustering
+```
