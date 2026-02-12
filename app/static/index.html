@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AdCraft AI - Ad Generation Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(0,0,0,0.12); }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .spinner { border: 3px solid #e5e7eb; border-top: 3px solid #6366f1; border-radius: 50%; width: 40px; height: 40px; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .pulse-dot { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .tag { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; margin: 2px; }
+        .copy-btn { cursor: pointer; transition: all 0.2s; }
+        .copy-btn:hover { color: #6366f1; }
+        .copy-btn.copied { color: #10b981; }
+        #imagePreview { max-height: 200px; object-fit: contain; }
+        .lang-chip { cursor: pointer; padding: 4px 12px; border-radius: 9999px; font-size: 13px; border: 1px solid #d1d5db; transition: all 0.2s; user-select: none; }
+        .lang-chip.selected { background: #6366f1; color: white; border-color: #6366f1; }
+        .lang-chip:hover { border-color: #6366f1; }
+        .tab-btn { padding: 8px 20px; border-radius: 8px; font-weight: 500; transition: all 0.2s; cursor: pointer; }
+        .tab-btn.active { background: #6366f1; color: white; }
+        .tab-btn:not(.active) { color: #6b7280; }
+        .tab-btn:not(.active):hover { background: #f3f4f6; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm border-b border-gray-100 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center space-x-3 cursor-pointer" onclick="showPage('dashboard')">
+                    <div class="w-9 h-9 gradient-bg rounded-lg flex items-center justify-center">
+                        <span class="text-white font-bold text-lg">A</span>
+                    </div>
+                    <div>
+                        <span class="font-bold text-gray-900 text-lg">AdCraft AI</span>
+                        <span class="text-xs text-gray-400 ml-2">No API Keys</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button onclick="showPage('dashboard')" class="tab-btn" id="nav-dashboard">Dashboard</button>
+                    <button onclick="showPage('generate')" class="tab-btn" id="nav-generate">Generate</button>
+                    <button onclick="showPage('products')" class="tab-btn" id="nav-products">Products</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- Dashboard Page -->
+        <div id="page-dashboard" class="page fade-in">
+            <div class="mb-8">
+                <h1 class="text-3xl font-bold text-gray-900">Welcome to AdCraft AI</h1>
+                <p class="text-gray-500 mt-2">Transform product images into professional ad creatives in seconds</p>
+            </div>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover">
+                    <div class="text-sm text-gray-500">Dataset Images</div>
+                    <div class="text-2xl font-bold text-gray-900 mt-1" id="stat-vectors">--</div>
+                </div>
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover">
+                    <div class="text-sm text-gray-500">Known Brands</div>
+                    <div class="text-2xl font-bold text-gray-900 mt-1" id="stat-brands">--</div>
+                </div>
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover">
+                    <div class="text-sm text-gray-500">Your Products</div>
+                    <div class="text-2xl font-bold text-gray-900 mt-1" id="stat-products">--</div>
+                </div>
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover">
+                    <div class="text-sm text-gray-500">Languages</div>
+                    <div class="text-2xl font-bold text-gray-900 mt-1" id="stat-languages">25+</div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 card-hover cursor-pointer" onclick="showPage('generate')">
+                    <div class="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center mb-4">
+                        <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                    </div>
+                    <h3 class="font-semibold text-gray-900 text-lg">Generate Ad</h3>
+                    <p class="text-gray-500 text-sm mt-1">Create professional ads from a simple text prompt</p>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 card-hover cursor-pointer" onclick="showPage('products'); document.getElementById('createProductBtn').click()">
+                    <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center mb-4">
+                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                    </div>
+                    <h3 class="font-semibold text-gray-900 text-lg">Create Product</h3>
+                    <p class="text-gray-500 text-sm mt-1">Upload images and build your product catalog</p>
+                </div>
+                <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 card-hover cursor-pointer" onclick="showPage('products')">
+                    <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mb-4">
+                        <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>
+                        </svg>
+                    </div>
+                    <h3 class="font-semibold text-gray-900 text-lg">My Products</h3>
+                    <p class="text-gray-500 text-sm mt-1">View and manage your product catalog</p>
+                </div>
+            </div>
+
+            <!-- Features -->
+            <div class="mt-10">
+                <h2 class="text-xl font-semibold text-gray-900 mb-4">Features</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="bg-white rounded-lg p-4 border border-gray-100 text-sm">
+                        <span class="font-medium text-gray-900">RAG Pipeline</span>
+                        <span class="text-gray-500 ml-1">- Content grounded in 61K+ real ads</span>
+                    </div>
+                    <div class="bg-white rounded-lg p-4 border border-gray-100 text-sm">
+                        <span class="font-medium text-gray-900">HD Images</span>
+                        <span class="text-gray-500 ml-1">- 1080x1080 professional pamphlets</span>
+                    </div>
+                    <div class="bg-white rounded-lg p-4 border border-gray-100 text-sm">
+                        <span class="font-medium text-gray-900">Multi-Language</span>
+                        <span class="text-gray-500 ml-1">- 25+ languages supported</span>
+                    </div>
+                    <div class="bg-white rounded-lg p-4 border border-gray-100 text-sm">
+                        <span class="font-medium text-gray-900">No API Keys</span>
+                        <span class="text-gray-500 ml-1">- 100% free, runs locally</span>
+                    </div>
+                    <div class="bg-white rounded-lg p-4 border border-gray-100 text-sm">
+                        <span class="font-medium text-gray-900">Image Upload</span>
+                        <span class="text-gray-500 ml-1">- Use your own product photos</span>
+                    </div>
+                    <div class="bg-white rounded-lg p-4 border border-gray-100 text-sm">
+                        <span class="font-medium text-gray-900">Product Hub</span>
+                        <span class="text-gray-500 ml-1">- Shareable product links</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Generate Page -->
+        <div id="page-generate" class="page hidden fade-in">
+            <h1 class="text-2xl font-bold text-gray-900 mb-6">Generate Ad Creative</h1>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Input Panel -->
+                <div class="space-y-6">
+                    <!-- Prompt -->
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Ad Prompt</label>
+                        <textarea id="promptInput" rows="3" placeholder="e.g., Bisleri water bottle pamphlet, Nike running shoes ad, Amul butter poster..."
+                            class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm resize-none"></textarea>
+                    </div>
+
+                    <!-- Image Upload -->
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Product Image (Optional)</label>
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-indigo-400 transition cursor-pointer" onclick="document.getElementById('imageInput').click()">
+                            <input type="file" id="imageInput" accept="image/*" class="hidden" onchange="previewImage(this)">
+                            <div id="uploadPlaceholder">
+                                <svg class="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                                <p class="text-sm text-gray-500">Click to upload or drag and drop</p>
+                                <p class="text-xs text-gray-400 mt-1">PNG, JPG up to 10MB</p>
+                            </div>
+                            <img id="imagePreview" class="hidden mx-auto rounded-lg" alt="Preview">
+                        </div>
+                        <button id="clearImageBtn" class="hidden mt-2 text-sm text-red-500 hover:text-red-700" onclick="clearImage()">Remove image</button>
+                    </div>
+
+                    <!-- Languages -->
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                        <label class="block text-sm font-medium text-gray-700 mb-3">Target Languages</label>
+                        <div id="languageChips" class="flex flex-wrap gap-2"></div>
+                        <p class="text-xs text-gray-400 mt-3">Click to select/deselect. English is always included.</p>
+                    </div>
+
+                    <!-- Generate Button -->
+                    <button id="generateBtn" onclick="generateAd()" class="w-full gradient-bg text-white py-4 rounded-xl font-semibold text-lg hover:opacity-90 transition flex items-center justify-center space-x-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                        <span>Generate Ad Creative</span>
+                    </button>
+
+                    <!-- Loading -->
+                    <div id="loadingPanel" class="hidden bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center">
+                        <div class="spinner mx-auto mb-4"></div>
+                        <p class="text-gray-700 font-medium" id="loadingText">Generating your ad creative...</p>
+                        <p class="text-gray-400 text-sm mt-2" id="loadingSubtext">This may take 30-90 seconds</p>
+                    </div>
+                </div>
+
+                <!-- Result Panel -->
+                <div id="resultPanel" class="hidden space-y-6">
+                    <!-- Pamphlet Preview -->
+                    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="font-semibold text-gray-900">Generated Ad</h3>
+                            <a id="downloadPamphlet" href="#" download class="text-sm text-indigo-600 hover:text-indigo-800 font-medium">Download HD</a>
+                        </div>
+                        <img id="pamphletImage" class="w-full rounded-lg shadow-md" alt="Generated Pamphlet">
+                    </div>
+
+                    <!-- Content -->
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                        <h3 class="font-semibold text-gray-900 mb-4">Generated Content</h3>
+
+                        <!-- Language Tabs -->
+                        <div id="langTabs" class="flex flex-wrap gap-2 mb-4"></div>
+
+                        <div class="space-y-4" id="contentFields">
+                            <div>
+                                <div class="flex justify-between items-center">
+                                    <label class="text-xs font-medium text-gray-500 uppercase tracking-wider">Product Title</label>
+                                    <span class="copy-btn text-xs text-gray-400" onclick="copyText('resultTitle')">Copy</span>
+                                </div>
+                                <p id="resultTitle" class="text-gray-900 font-medium mt-1"></p>
+                            </div>
+                            <div>
+                                <div class="flex justify-between items-center">
+                                    <label class="text-xs font-medium text-gray-500 uppercase tracking-wider">Description</label>
+                                    <span class="copy-btn text-xs text-gray-400" onclick="copyText('resultDesc')">Copy</span>
+                                </div>
+                                <p id="resultDesc" class="text-gray-700 text-sm mt-1"></p>
+                            </div>
+                            <div>
+                                <div class="flex justify-between items-center">
+                                    <label class="text-xs font-medium text-gray-500 uppercase tracking-wider">Instagram Caption</label>
+                                    <span class="copy-btn text-xs text-gray-400" onclick="copyText('resultCaption')">Copy</span>
+                                </div>
+                                <p id="resultCaption" class="text-gray-700 text-sm mt-1"></p>
+                            </div>
+                            <div>
+                                <div class="flex justify-between items-center">
+                                    <label class="text-xs font-medium text-gray-500 uppercase tracking-wider">WhatsApp Copy</label>
+                                    <span class="copy-btn text-xs text-gray-400" onclick="copyText('resultWhatsapp')">Copy</span>
+                                </div>
+                                <p id="resultWhatsapp" class="text-gray-700 text-sm mt-1"></p>
+                            </div>
+                            <div>
+                                <label class="text-xs font-medium text-gray-500 uppercase tracking-wider">Hashtags</label>
+                                <div id="resultHashtags" class="mt-1"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Brand Match Info -->
+                    <div id="brandInfo" class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hidden">
+                        <h3 class="font-semibold text-gray-900 mb-3">Brand Match</h3>
+                        <div class="grid grid-cols-2 gap-3 text-sm">
+                            <div><span class="text-gray-500">Brand:</span> <span id="brandName" class="font-medium text-gray-900"></span></div>
+                            <div><span class="text-gray-500">Confidence:</span> <span id="brandConfidence" class="font-medium text-gray-900"></span></div>
+                            <div><span class="text-gray-500">Category:</span> <span id="brandCategory" class="font-medium text-gray-900"></span></div>
+                            <div><span class="text-gray-500">Dataset Ads:</span> <span id="brandCount" class="font-medium text-gray-900"></span></div>
+                        </div>
+                    </div>
+
+                    <!-- Timings -->
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                        <h3 class="font-semibold text-gray-900 mb-3">Pipeline Timings</h3>
+                        <div id="timings" class="space-y-2 text-sm"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Products Page -->
+        <div id="page-products" class="page hidden fade-in">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-2xl font-bold text-gray-900">My Products</h1>
+                <button id="createProductBtn" onclick="toggleCreateForm()" class="bg-indigo-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
+                    + Create Product
+                </button>
+            </div>
+
+            <!-- Create Product Form -->
+            <div id="createProductForm" class="hidden bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6 fade-in">
+                <h3 class="font-semibold text-gray-900 mb-4">New Product</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Product Name *</label>
+                        <input type="text" id="productName" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" placeholder="e.g., Nike Air Max">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                        <input type="text" id="productBrand" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" placeholder="e.g., Nike">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                        <input type="text" id="productCategory" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" placeholder="e.g., Footwear">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Price</label>
+                        <input type="text" id="productPrice" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" placeholder="e.g., 4999">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                        <textarea id="productDescription" rows="2" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 resize-none" placeholder="Brief product description..."></textarea>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Product Images (up to 3)</label>
+                        <input type="file" id="productImages" accept="image/*" multiple class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100">
+                    </div>
+                </div>
+                <div class="flex space-x-3 mt-4">
+                    <button onclick="createProduct()" class="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">Create Product</button>
+                    <button onclick="toggleCreateForm()" class="text-gray-500 px-6 py-2 rounded-lg text-sm hover:bg-gray-100">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Product List -->
+            <div id="productList" class="space-y-4"></div>
+            <div id="noProducts" class="hidden text-center py-16">
+                <svg class="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                </svg>
+                <p class="text-gray-400 text-lg">No products yet</p>
+                <p class="text-gray-400 text-sm mt-1">Create your first product to get started</p>
+            </div>
+        </div>
+
+        <!-- Product Detail Page -->
+        <div id="page-product-detail" class="page hidden fade-in">
+            <button onclick="showPage('products')" class="text-indigo-600 text-sm font-medium mb-4 hover:text-indigo-800 flex items-center">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                Back to Products
+            </button>
+            <div id="productDetailContent"></div>
+        </div>
+    </main>
+
+    <script>
+        // ===== State =====
+        let languages = {};
+        let selectedLangs = new Set(['en']);
+        let currentResult = null;
+        let currentLang = 'en';
+
+        // ===== Init =====
+        async function init() {
+            try {
+                const [statsRes, langsRes] = await Promise.all([
+                    fetch('/api/stats').catch(() => null),
+                    fetch('/api/languages').catch(() => null),
+                ]);
+                if (statsRes && statsRes.ok) {
+                    const stats = await statsRes.json();
+                    document.getElementById('stat-vectors').textContent = (stats.total_vectors || 0).toLocaleString();
+                    document.getElementById('stat-brands').textContent = stats.total_brands || '--';
+                    document.getElementById('stat-products').textContent = stats.products || 0;
+                }
+                if (langsRes && langsRes.ok) {
+                    const data = await langsRes.json();
+                    languages = data.languages || {};
+                    renderLanguageChips();
+                }
+            } catch (e) {
+                console.log('Stats loading deferred - pipeline initializing');
+            }
+        }
+
+        // ===== Navigation =====
+        function showPage(page) {
+            document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            const el = document.getElementById('page-' + page);
+            if (el) { el.classList.remove('hidden'); el.classList.add('fade-in'); }
+            const nav = document.getElementById('nav-' + page);
+            if (nav) nav.classList.add('active');
+            if (page === 'products') loadProducts();
+            if (page === 'dashboard') init();
+        }
+
+        // ===== Language Chips =====
+        function renderLanguageChips() {
+            const container = document.getElementById('languageChips');
+            container.innerHTML = '';
+            const popular = ['en', 'hi', 'bn', 'ta', 'te', 'kn', 'ml', 'mr', 'gu', 'pa', 'ur', 'es', 'fr', 'de', 'ar', 'ja', 'ko', 'zh-CN'];
+            for (const code of popular) {
+                const name = languages[code] || code;
+                const chip = document.createElement('span');
+                chip.className = 'lang-chip' + (selectedLangs.has(code) ? ' selected' : '');
+                chip.textContent = name;
+                chip.onclick = () => {
+                    if (code === 'en') return;
+                    if (selectedLangs.has(code)) selectedLangs.delete(code);
+                    else selectedLangs.add(code);
+                    chip.classList.toggle('selected');
+                };
+                container.appendChild(chip);
+            }
+        }
+
+        // ===== Image Upload =====
+        function previewImage(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    document.getElementById('imagePreview').src = e.target.result;
+                    document.getElementById('imagePreview').classList.remove('hidden');
+                    document.getElementById('uploadPlaceholder').classList.add('hidden');
+                    document.getElementById('clearImageBtn').classList.remove('hidden');
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function clearImage() {
+            document.getElementById('imageInput').value = '';
+            document.getElementById('imagePreview').classList.add('hidden');
+            document.getElementById('uploadPlaceholder').classList.remove('hidden');
+            document.getElementById('clearImageBtn').classList.add('hidden');
+        }
+
+        // ===== Generate Ad =====
+        async function generateAd() {
+            const prompt = document.getElementById('promptInput').value.trim();
+            if (!prompt) { alert('Please enter an ad prompt'); return; }
+
+            const btn = document.getElementById('generateBtn');
+            const loading = document.getElementById('loadingPanel');
+            const result = document.getElementById('resultPanel');
+
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+            loading.classList.remove('hidden');
+            result.classList.add('hidden');
+
+            const steps = [
+                'Matching brand...', 'Retrieving similar ads from dataset...',
+                'Extracting colors...', 'Generating content...',
+                'Creating HD image (30-90s)...', 'Composing pamphlet...',
+                'Translating content...'
+            ];
+            let stepIdx = 0;
+            const stepInterval = setInterval(() => {
+                if (stepIdx < steps.length) {
+                    document.getElementById('loadingText').textContent = steps[stepIdx];
+                    stepIdx++;
+                }
+            }, 4000);
+
+            try {
+                const formData = new FormData();
+                formData.append('prompt', prompt);
+                formData.append('languages', Array.from(selectedLangs).join(','));
+
+                const imageInput = document.getElementById('imageInput');
+                if (imageInput.files && imageInput.files[0]) {
+                    formData.append('image', imageInput.files[0]);
+                }
+
+                const resp = await fetch('/api/generate', { method: 'POST', body: formData });
+                const data = await resp.json();
+                clearInterval(stepInterval);
+
+                if (data.errors && data.errors.length > 0 && !data.pamphlet_url) {
+                    alert('Generation errors: ' + data.errors.join(', '));
+                    return;
+                }
+
+                currentResult = data;
+                displayResult(data);
+            } catch (e) {
+                clearInterval(stepInterval);
+                alert('Error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+                loading.classList.add('hidden');
+            }
+        }
+
+        function displayResult(data) {
+            const panel = document.getElementById('resultPanel');
+            panel.classList.remove('hidden');
+            panel.scrollIntoView({ behavior: 'smooth' });
+
+            // Pamphlet
+            if (data.pamphlet_url) {
+                document.getElementById('pamphletImage').src = data.pamphlet_url;
+                document.getElementById('downloadPamphlet').href = data.pamphlet_url;
+            }
+
+            // Language tabs
+            const langTabs = document.getElementById('langTabs');
+            langTabs.innerHTML = '';
+            if (data.translations) {
+                for (const lang of Object.keys(data.translations)) {
+                    const btn = document.createElement('button');
+                    btn.className = 'tab-btn text-sm' + (lang === 'en' ? ' active' : '');
+                    btn.textContent = languages[lang] || lang;
+                    btn.onclick = () => {
+                        currentLang = lang;
+                        langTabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        showTranslation(lang);
+                    };
+                    langTabs.appendChild(btn);
+                }
+            }
+
+            // Content
+            showTranslation('en');
+
+            // Hashtags
+            const hashtagsEl = document.getElementById('resultHashtags');
+            hashtagsEl.innerHTML = '';
+            if (data.content && data.content.hashtags) {
+                data.content.hashtags.forEach(h => {
+                    const tag = document.createElement('span');
+                    tag.className = 'tag bg-indigo-100 text-indigo-700';
+                    tag.textContent = '#' + h.replace('#', '');
+                    hashtagsEl.appendChild(tag);
+                });
+            }
+
+            // Brand info
+            if (data.brand && data.brand.matched_brand) {
+                document.getElementById('brandInfo').classList.remove('hidden');
+                document.getElementById('brandName').textContent = data.brand.matched_brand.replace(/_/g, ' ');
+                document.getElementById('brandConfidence').textContent = (data.brand.confidence * 100).toFixed(0) + '%';
+                document.getElementById('brandCategory').textContent = (data.brand.category + '/' + data.brand.subcategory).replace(/_/g, ' ');
+                document.getElementById('brandCount').textContent = data.brand.image_count.toLocaleString();
+            } else {
+                document.getElementById('brandInfo').classList.add('hidden');
+            }
+
+            // Timings
+            const timingsEl = document.getElementById('timings');
+            timingsEl.innerHTML = '';
+            if (data.timings) {
+                for (const [stage, time] of Object.entries(data.timings)) {
+                    const row = document.createElement('div');
+                    row.className = 'flex justify-between';
+                    row.innerHTML = `<span class="text-gray-500">${stage.replace(/_/g, ' ')}</span><span class="font-medium text-gray-900">${time.toFixed(1)}s</span>`;
+                    timingsEl.appendChild(row);
+                }
+            }
+        }
+
+        function showTranslation(lang) {
+            if (!currentResult || !currentResult.translations) return;
+            const t = currentResult.translations[lang] || currentResult.translations['en'] || {};
+            document.getElementById('resultTitle').textContent = t.product_title || t.tagline || '';
+            document.getElementById('resultDesc').textContent = t.product_description || t.description || '';
+            document.getElementById('resultCaption').textContent = t.instagram_caption || t.caption || '';
+            document.getElementById('resultWhatsapp').textContent = t.whatsapp_copy || t.cta || '';
+        }
+
+        // ===== Copy Text =====
+        function copyText(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = event.target;
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+            });
+        }
+
+        // ===== Products =====
+        function toggleCreateForm() {
+            document.getElementById('createProductForm').classList.toggle('hidden');
+        }
+
+        async function createProduct() {
+            const name = document.getElementById('productName').value.trim();
+            if (!name) { alert('Product name is required'); return; }
+
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('description', document.getElementById('productDescription').value);
+            formData.append('price', document.getElementById('productPrice').value);
+            formData.append('category', document.getElementById('productCategory').value);
+            formData.append('brand', document.getElementById('productBrand').value);
+
+            const images = document.getElementById('productImages').files;
+            for (let i = 0; i < Math.min(images.length, 3); i++) {
+                formData.append('images', images[i]);
+            }
+
+            try {
+                const resp = await fetch('/api/products', { method: 'POST', body: formData });
+                const data = await resp.json();
+                alert('Product created! ID: ' + data.product_id);
+                toggleCreateForm();
+                loadProducts();
+                // Clear form
+                document.getElementById('productName').value = '';
+                document.getElementById('productDescription').value = '';
+                document.getElementById('productPrice').value = '';
+                document.getElementById('productCategory').value = '';
+                document.getElementById('productBrand').value = '';
+                document.getElementById('productImages').value = '';
+            } catch (e) {
+                alert('Error creating product: ' + e.message);
+            }
+        }
+
+        async function loadProducts() {
+            try {
+                const resp = await fetch('/api/products');
+                const data = await resp.json();
+                const list = document.getElementById('productList');
+                const empty = document.getElementById('noProducts');
+
+                if (!data.products || data.products.length === 0) {
+                    list.innerHTML = '';
+                    empty.classList.remove('hidden');
+                    return;
+                }
+
+                empty.classList.add('hidden');
+                list.innerHTML = data.products.map(p => `
+                    <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100 card-hover">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-semibold text-gray-900">${p.name}</h3>
+                                <p class="text-sm text-gray-500 mt-1">${p.description || p.category || 'No description'}</p>
+                                <div class="flex items-center space-x-4 mt-2 text-xs text-gray-400">
+                                    ${p.brand ? `<span class="tag bg-gray-100 text-gray-600">${p.brand}</span>` : ''}
+                                    ${p.price ? `<span class="font-medium text-green-600">${p.price}</span>` : ''}
+                                    <span>ID: ${p.id}</span>
+                                </div>
+                            </div>
+                            <div class="flex space-x-2">
+                                <button onclick="viewProduct('${p.id}')" class="text-indigo-600 text-sm font-medium hover:text-indigo-800">View</button>
+                                <button onclick="copyHubLink('${p.id}')" class="text-green-600 text-sm font-medium hover:text-green-800">Hub Link</button>
+                                <button onclick="deleteProduct('${p.id}')" class="text-red-500 text-sm hover:text-red-700">Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load products:', e);
+            }
+        }
+
+        async function viewProduct(id) {
+            try {
+                const resp = await fetch(`/api/products/${id}`);
+                const data = await resp.json();
+                const p = data.product;
+                const content = data.content || [];
+                const analytics = data.analytics || { total_clicks: 0, by_platform: {} };
+
+                const detail = document.getElementById('productDetailContent');
+                let contentHtml = '';
+                if (content.length > 0) {
+                    const c = content[0].content_json;
+                    contentHtml = `
+                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mt-4">
+                            <h3 class="font-semibold text-gray-900 mb-3">Generated Content</h3>
+                            ${content[0].pamphlet_path ? `<img src="/file?path=${content[0].pamphlet_path}" class="w-full max-w-md rounded-lg shadow-md mb-4" alt="Ad">` : ''}
+                            <div class="space-y-3 text-sm">
+                                ${c.product_title ? `<div><span class="text-gray-500 font-medium">Title:</span> <span class="text-gray-900">${c.product_title}</span></div>` : ''}
+                                ${c.product_description ? `<div><span class="text-gray-500 font-medium">Description:</span> <span class="text-gray-700">${c.product_description}</span></div>` : ''}
+                                ${c.instagram_caption ? `<div><span class="text-gray-500 font-medium">Instagram:</span> <span class="text-gray-700">${c.instagram_caption}</span></div>` : ''}
+                            </div>
+                        </div>`;
+                }
+
+                detail.innerHTML = `
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h2 class="text-xl font-bold text-gray-900">${p.name}</h2>
+                                <p class="text-gray-500 mt-1">${p.description || ''}</p>
+                                <div class="flex items-center space-x-3 mt-3">
+                                    ${p.brand ? `<span class="tag bg-indigo-100 text-indigo-700">${p.brand}</span>` : ''}
+                                    ${p.category ? `<span class="tag bg-green-100 text-green-700">${p.category}</span>` : ''}
+                                    ${p.price ? `<span class="font-semibold text-green-600">${p.price}</span>` : ''}
+                                </div>
+                            </div>
+                            <a href="/hub/${p.id}" target="_blank" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">Open Hub</a>
+                        </div>
+                    </div>
+
+                    <!-- Analytics -->
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mt-4">
+                        <h3 class="font-semibold text-gray-900 mb-3">Traffic Analytics</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="text-center p-3 bg-gray-50 rounded-lg">
+                                <div class="text-2xl font-bold text-gray-900">${analytics.total_clicks}</div>
+                                <div class="text-xs text-gray-500">Total Clicks</div>
+                            </div>
+                            <div class="text-center p-3 bg-green-50 rounded-lg">
+                                <div class="text-2xl font-bold text-green-600">${analytics.by_platform?.whatsapp || 0}</div>
+                                <div class="text-xs text-gray-500">WhatsApp</div>
+                            </div>
+                            <div class="text-center p-3 bg-pink-50 rounded-lg">
+                                <div class="text-2xl font-bold text-pink-600">${analytics.by_platform?.instagram || 0}</div>
+                                <div class="text-xs text-gray-500">Instagram</div>
+                            </div>
+                            <div class="text-center p-3 bg-blue-50 rounded-lg">
+                                <div class="text-2xl font-bold text-blue-600">${analytics.by_platform?.website || 0}</div>
+                                <div class="text-xs text-gray-500">Website</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    ${contentHtml}
+
+                    <!-- Generate for this product -->
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mt-4">
+                        <h3 class="font-semibold text-gray-900 mb-3">Generate New Content</h3>
+                        <div class="flex space-x-3">
+                            <input type="text" id="productGenPrompt" class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="Custom prompt (optional)">
+                            <button onclick="generateForProduct('${p.id}')" class="bg-indigo-600 text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700">Generate</button>
+                        </div>
+                    </div>
+                `;
+
+                showPage('product-detail');
+            } catch (e) {
+                alert('Error loading product: ' + e.message);
+            }
+        }
+
+        async function generateForProduct(id) {
+            const prompt = document.getElementById('productGenPrompt')?.value || '';
+            const langs = Array.from(selectedLangs).join(',');
+
+            try {
+                const formData = new FormData();
+                formData.append('prompt', prompt);
+                formData.append('languages', langs);
+
+                const resp = await fetch(`/api/products/${id}/generate`, { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (data.success) {
+                    alert('Content generated successfully!');
+                    viewProduct(id);
+                } else {
+                    alert('Errors: ' + (data.errors || []).join(', '));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function deleteProduct(id) {
+            if (!confirm('Delete this product?')) return;
+            try {
+                await fetch(`/api/products/${id}`, { method: 'DELETE' });
+                loadProducts();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        function copyHubLink(id) {
+            const url = window.location.origin + '/hub/' + id;
+            navigator.clipboard.writeText(url).then(() => alert('Hub link copied: ' + url));
+        }
+
+        // ===== Init =====
+        init();
+        showPage('dashboard');
+    </script>
+</body>
+</html>
