@@ -1,7 +1,7 @@
 """
 AdCraft AI - FastAPI Backend
 Production-ready web server for ad generation.
-No API keys required.
+Fully local — no external APIs for image/text generation.
 """
 
 import io
@@ -29,8 +29,8 @@ from app.pipeline import (
 
 app = FastAPI(
     title="AdCraft AI",
-    description="AI-powered ad generation platform. No API keys required.",
-    version="2.0.0",
+    description="AI-powered ad generation platform. Fully local image generation.",
+    version="2.1.0",
 )
 
 app.add_middleware(
@@ -144,7 +144,7 @@ async def serve_product_hub(product_id: str):
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "ok", "version": "2.0.0", "api_keys_required": False}
+    return {"status": "ok", "version": "2.1.0", "api_keys_required": False}
 
 
 @app.get("/api/languages")
@@ -171,12 +171,14 @@ async def get_stats():
 async def generate_ad(
     prompt: str = Form(...),
     languages: str = Form("en"),
+    brand: str = Form(""),
     image: Optional[UploadFile] = File(None),
 ):
     """Generate ad creative from text prompt and optional image.
 
     - prompt: Text description (e.g., "Bisleri water bottle pamphlet")
     - languages: Comma-separated language codes (e.g., "en,hi,ta,bn")
+    - brand: Brand name for logo fetching (e.g., "Nike", "Samsung")
     - image: Optional product image upload
     """
     pipeline = get_pipeline()
@@ -204,6 +206,7 @@ async def generate_ad(
         query=prompt,
         languages=lang_list,
         uploaded_image=uploaded_image,
+        brand_override=brand.strip() if brand.strip() else None,
     )
 
     # Build response
