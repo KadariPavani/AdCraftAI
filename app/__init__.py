@@ -1,1 +1,1 @@
-# AdCraft AI - MAdVerse RAG-based Ad Generation Platform
+# AdCraft AI - MAdVerse RAG-based ad generation platform.
