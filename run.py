@@ -26,7 +26,6 @@ def main():
     print()
     print("=" * 55)
     print("  AdCraft AI - Ad Generation Platform")
-    print("  No API keys required!")
     print("=" * 55)
     print()
     print("  Open in browser: http://localhost:8000")
