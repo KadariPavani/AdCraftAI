@@ -31,6 +31,7 @@ from app.image_gen import ImageGenerator, LocalAdImageGenerator
 from app.content_gen import PollinationsTextGenerator, ContentGenerator, Translator, ImageEnhancer
 from app.designer import ProAdDesigner
 from app.database import Database
+from app.dataset_enhancer import DatasetEnhancer
 
 load_dotenv()
 
@@ -65,6 +66,14 @@ class AdCraftPipeline:
         self.translator = Translator()
         self.enhancer = ImageEnhancer()
         self.db = Database()
+        self.dataset_enhancer = DatasetEnhancer(
+            faiss_index=self.index,
+            id_to_metadata=self.id_to_metadata,
+            brand_matcher=self.brand_matcher,
+            clip_model=self.clip_model,
+            clip_processor=self.clip_processor,
+            device=self.device,
+        )
 
         print("\n  Pipeline ready!")
         print("=" * 60)
@@ -492,6 +501,25 @@ class AdCraftPipeline:
             json_path = OUTPUT_DIR / f"result_{timestamp}.json"
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(asdict(result), f, indent=2, ensure_ascii=False, default=str)
+
+            # Stage 7: Dataset Enhancement — copy pamphlet into structured
+            # dataset and update FAISS index for future retrieval.
+            try:
+                if result.pamphlet_path:
+                    t0 = time.time()
+                    ds_paths = self.dataset_enhancer.enhance(
+                        pamphlet_path=result.pamphlet_path,
+                        brand=brand,
+                        category=category,
+                        subcategory=subcategory,
+                        query=query,
+                        timestamp=timestamp,
+                    )
+                    if ds_paths:
+                        result.dataset_paths = ds_paths
+                    result.stage_timings["dataset_enhancement"] = time.time() - t0
+            except Exception as de_err:
+                print(f"  [DatasetEnhancer] Skipped: {de_err}")
 
         except Exception as e:
             result.errors.append(f"Pipeline error: {str(e)}")

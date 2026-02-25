@@ -228,6 +228,7 @@ async def generate_ad(
         "product_image_url": f"/file?path={result.product_image_path}" if result.product_image_path else None,
         "retrieved_ads": result.retrieved_ads[:3],
         "colors": result.extracted_colors,
+        "dataset_paths": result.dataset_paths,
         "errors": result.errors,
     }
 
@@ -356,6 +357,7 @@ async def generate_for_product(
         "translations": result.translations,
         "pamphlet_url": f"/file?path={result.pamphlet_path}" if result.pamphlet_path else None,
         "product_image_url": f"/file?path={result.product_image_path}" if result.product_image_path else None,
+        "dataset_paths": result.dataset_paths,
         "timings": result.stage_timings,
         "errors": result.errors,
     }

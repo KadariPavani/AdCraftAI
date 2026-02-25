@@ -141,3 +141,4 @@ class GenerationResult:
     translations: Dict[str, Dict[str, str]] = field(default_factory=dict)
     product_id: Optional[str] = None
     languages_generated: List[str] = field(default_factory=list)
+    dataset_paths: Optional[Dict[str, str]] = None
