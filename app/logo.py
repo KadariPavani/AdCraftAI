@@ -43,38 +43,68 @@ class ProLogoFetcher:
 
     @classmethod
     def fetch(cls, brand_name: str) -> Optional[Image.Image]:
+        print(f"    [LOGO] Fetching logo for: {brand_name}")
         domain = cls._get_domain(brand_name)
+        print(f"    [LOGO] Resolved domain: {domain}")
+        print(f"    [LOGO] 5-source fallback chain starting...")
 
         # Source 1: Scrape website for apple-touch-icon (best: up to 512px)
+        print(f"    [LOGO] Source 1: Website apple-touch-icon ({domain})")
         logo = cls._try_website_icon(domain)
         if logo and min(logo.size) >= 64:
+            print(f"    [LOGO] Source 1 SUCCESS: {logo.size}")
             cleaned = cls._remove_background(logo)
             if cleaned:
-                return cls._polish_logo(cleaned)
+                result = cls._polish_logo(cleaned)
+                print(f"    [LOGO] Final logo: {result.size} | Mode: {result.mode}")
+                return result
+        else:
+            print(f"    [LOGO] Source 1 FAILED{f' (too small: {logo.size})' if logo else ''}")
 
         # Source 2: Google faviconV2 (reliable, up to 256px)
+        print(f"    [LOGO] Source 2: Google faviconV2")
         logo = cls._try_google_favicon(domain)
         if logo and min(logo.size) >= 48:
+            print(f"    [LOGO] Source 2 SUCCESS: {logo.size}")
             cleaned = cls._remove_background(logo)
             if cleaned:
-                return cls._polish_logo(cleaned)
+                result = cls._polish_logo(cleaned)
+                print(f"    [LOGO] Final logo: {result.size} | Mode: {result.mode}")
+                return result
+        else:
+            print(f"    [LOGO] Source 2 FAILED{f' (too small: {logo.size})' if logo else ''}")
 
         # Source 3: icon.horse (good backup)
+        print(f"    [LOGO] Source 3: icon.horse")
         logo = cls._try_icon_horse(domain)
         if logo and min(logo.size) >= 48:
+            print(f"    [LOGO] Source 3 SUCCESS: {logo.size}")
             cleaned = cls._remove_background(logo)
             if cleaned:
-                return cls._polish_logo(cleaned)
+                result = cls._polish_logo(cleaned)
+                print(f"    [LOGO] Final logo: {result.size} | Mode: {result.mode}")
+                return result
+        else:
+            print(f"    [LOGO] Source 3 FAILED{f' (too small: {logo.size})' if logo else ''}")
 
         # Source 4: DuckDuckGo icon
+        print(f"    [LOGO] Source 4: DuckDuckGo icon")
         logo = cls._try_duckduckgo_icon(domain)
         if logo and min(logo.size) >= 48:
+            print(f"    [LOGO] Source 4 SUCCESS: {logo.size}")
             cleaned = cls._remove_background(logo)
             if cleaned:
-                return cls._polish_logo(cleaned)
+                result = cls._polish_logo(cleaned)
+                print(f"    [LOGO] Final logo: {result.size} | Mode: {result.mode}")
+                return result
+        else:
+            print(f"    [LOGO] Source 4 FAILED{f' (too small: {logo.size})' if logo else ''}")
 
         # Final fallback: text-based logo
-        return cls._generate_text_logo(brand_name)
+        print(f"    [LOGO] Source 5: Text-based logo generator (FALLBACK)")
+        result = cls._generate_text_logo(brand_name)
+        print(f"    [LOGO] Generated text logo: {result.size}")
+        return result
 
     @classmethod
     def _get_domain(cls, brand_name: str) -> str:

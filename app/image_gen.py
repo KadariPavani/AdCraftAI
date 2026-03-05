@@ -1,11 +1,10 @@
-# Image generation: Multiple free API fallbacks + gradient fallback + local PIL backgrounds.
-# Fallback chain: Pollinations (3 models) → HF free models (SDXL, SD2.1) → gradient
+# Image generation: HuggingFace FLUX.1-schnell (primary) + gradient fallback.
+# Clean single-path implementation — no unnecessary fallback chains.
 
 import io
 import math
 import random
 import time
-import urllib.parse
 from typing import Optional, Tuple
 
 import numpy as np
@@ -14,32 +13,18 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 
 # ---------------------------------------------------------------------------
-# Remote Image Generator (7-tier fallback chain, all FREE, no paid keys)
+# Remote Image Generator — HuggingFace FLUX.1-schnell + gradient fallback
 # ---------------------------------------------------------------------------
 
 class ImageGenerator:
-    """Tries multiple free image generation APIs in order:
-    1. Pollinations FLUX (free, no key)
-    2. Pollinations Turbo (free, no key, different backend)
-    3. Pollinations flux-realism (free, no key, different backend)
-    4. HuggingFace FLUX.1-schnell (needs HF_TOKEN + credits)
-    5. HuggingFace SDXL (FREE model, needs HF_TOKEN, NO credits needed)
-    6. HuggingFace SD 2.1 (FREE model, needs HF_TOKEN, NO credits needed)
-    7. Gradient fallback (local PIL)
+    """Image generation with one reliable API + one local fallback:
+    1. HuggingFace FLUX.1-schnell (primary — fast, high quality, needs HF_TOKEN)
+    2. Gradient fallback (local PIL — always works, no API needed)
     """
 
-    POLLINATIONS_TIMEOUT = 120
-    POLLINATIONS_RETRIES = 2
-
-    # HuggingFace model URLs — FLUX needs credits, SDXL and SD2.1 are FREE
-    HF_MODELS = [
-        ("FLUX.1-schnell", "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"),
-        ("Stable Diffusion XL", "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"),
-        ("Stable Diffusion 2.1", "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2-1"),
-    ]
-
-    # Pollinations models to try — different backends, different availability
-    POLLINATIONS_MODELS = ["flux", "turbo", "flux-realism"]
+    HF_MODEL_NAME = "FLUX.1-schnell"
+    HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
+    HF_TIMEOUT = 120
 
     def __init__(self, hf_token: Optional[str] = None, **kwargs):
         self.hf_token = hf_token
@@ -48,98 +33,99 @@ class ImageGenerator:
         self, prompt: str, negative_prompt: str = "",
         width: int = 1024, height: int = 768,
     ) -> Tuple[Optional[Image.Image], str]:
-        """Try all sources in order."""
+        """Generate image: try HF FLUX.1-schnell first, gradient fallback if it fails."""
+        print(f"\n    [IMG-GEN] Starting image generation")
+        print(f"    [IMG-GEN] Target: {width}x{height}")
+        print(f"    [IMG-GEN] Prompt ({len(prompt)} chars): \"{prompt[:100]}...\"")
 
-        # Tier 1-3: Try all Pollinations models
-        for model in self.POLLINATIONS_MODELS:
-            img = self._try_pollinations(prompt, width, height, model=model)
-            if img:
-                return img, f"pollinations_{model}"
+        # Primary: HuggingFace FLUX.1-schnell
+        print(f"\n    [IMG-GEN] === PRIMARY: HuggingFace {self.HF_MODEL_NAME} ===")
+        img = self._generate_hf_flux(prompt)
+        if img:
+            print(f"    [IMG-GEN] SUCCESS! Image generated via {self.HF_MODEL_NAME}")
+            return img, f"hf_flux1-schnell"
 
-        # Tier 4-6: Try all HuggingFace models (FLUX → SDXL → SD2.1)
-        for model_name, model_url in self.HF_MODELS:
-            img = self._try_hf_inference(prompt, model_name, model_url)
-            if img:
-                safe_name = model_name.lower().replace(" ", "_").replace(".", "")
-                return img, f"hf_{safe_name}"
-
-        # Tier 7: Local gradient fallback
+        # Fallback: Local gradient
+        print(f"\n    [IMG-GEN] === FALLBACK: Gradient (Local PIL) ===")
+        print(f"    [IMG-GEN] HF generation failed, creating local gradient...")
         img = self._make_gradient(width, height)
+        print(f"    [IMG-GEN] Gradient generated: {img.size}")
         return img, "gradient_fallback"
 
-    def _try_pollinations(self, prompt, width, height,
-                          model="flux") -> Optional[Image.Image]:
-        print(f"\n    Trying Pollinations.ai ({model})...")
-        encoded = urllib.parse.quote(prompt, safe="")
-        seed = random.randint(1, 999999)
-        url = (
-            f"https://image.pollinations.ai/prompt/{encoded}"
-            f"?width={width}&height={height}&model={model}&nologo=true&seed={seed}"
-        )
-        for attempt in range(self.POLLINATIONS_RETRIES):
-            try:
-                label = f" (attempt {attempt + 1})" if attempt > 0 else ""
-                print(f"      Requesting image{label} (may take 30-90s)...")
-                resp = requests.get(url, timeout=self.POLLINATIONS_TIMEOUT)
-                if resp.status_code == 200 and len(resp.content) > 1000:
-                    img = Image.open(io.BytesIO(resp.content)).convert("RGB")
-                    print(f"      Success! Image size: {img.size}")
-                    return img
-                elif resp.status_code >= 500:
-                    print(f"      Server error {resp.status_code}, retrying...")
-                    time.sleep(5)
-                else:
-                    print(f"      Failed: status={resp.status_code}")
-                    return None
-            except requests.Timeout:
-                print(f"      Timeout after {self.POLLINATIONS_TIMEOUT}s")
-            except Exception as e:
-                print(f"      Error: {e}")
-        return None
-
-    def _try_hf_inference(self, prompt, model_name="FLUX.1-schnell",
-                          model_url=None) -> Optional[Image.Image]:
+    def _generate_hf_flux(self, prompt: str) -> Optional[Image.Image]:
+        """Generate image using HuggingFace FLUX.1-schnell inference API."""
         if not self.hf_token:
-            print(f"\n    Skipping HF {model_name} (no token)")
+            print(f"      [HF-FLUX] SKIPPED: No HF_TOKEN set")
+            print(f"      [HF-FLUX] To enable: set HF_TOKEN in .env file")
             return None
-        if model_url is None:
-            model_url = self.HF_MODELS[0][1]
-        print(f"\n    Trying HuggingFace ({model_name})...")
+
+        print(f"      [HF-FLUX] Model: {self.HF_MODEL_NAME}")
+        print(f"      [HF-FLUX] URL: {self.HF_MODEL_URL}")
+        print(f"      [HF-FLUX] Token: {self.hf_token[:8]}...{self.hf_token[-4:]}")
+        print(f"      [HF-FLUX] Timeout: {self.HF_TIMEOUT}s")
+
+        headers = {"Authorization": f"Bearer {self.hf_token}"}
+        payload = {"inputs": prompt}
+
         try:
-            headers = {"Authorization": f"Bearer {self.hf_token}"}
-            payload = {"inputs": prompt}
+            print(f"      [HF-FLUX] Sending inference request...")
+            t0 = time.time()
             resp = requests.post(
-                model_url, headers=headers,
-                json=payload, timeout=120,
+                self.HF_MODEL_URL, headers=headers,
+                json=payload, timeout=self.HF_TIMEOUT,
             )
+            elapsed = time.time() - t0
+            print(f"      [HF-FLUX] Response: status={resp.status_code} | size={len(resp.content):,} bytes | time={elapsed:.1f}s")
+
             if resp.status_code == 200 and len(resp.content) > 1000:
                 img = Image.open(io.BytesIO(resp.content)).convert("RGB")
-                print(f"      Success! Image size: {img.size}")
+                print(f"      [HF-FLUX] SUCCESS! Image decoded: {img.size} | Mode: {img.mode}")
                 return img
+
             elif resp.status_code == 503:
-                # Model is loading, wait and retry once
-                print(f"      Model loading, waiting 20s...")
+                # Model cold start — wait and retry once
+                print(f"      [HF-FLUX] Model is loading (503)... waiting 20s for cold start")
                 time.sleep(20)
+                print(f"      [HF-FLUX] Retrying after cold start...")
+                t0 = time.time()
                 resp = requests.post(
-                    model_url, headers=headers,
-                    json=payload, timeout=120,
+                    self.HF_MODEL_URL, headers=headers,
+                    json=payload, timeout=self.HF_TIMEOUT,
                 )
+                elapsed = time.time() - t0
+                print(f"      [HF-FLUX] Retry response: status={resp.status_code} | size={len(resp.content):,} bytes | time={elapsed:.1f}s")
                 if resp.status_code == 200 and len(resp.content) > 1000:
                     img = Image.open(io.BytesIO(resp.content)).convert("RGB")
-                    print(f"      Success! Image size: {img.size}")
+                    print(f"      [HF-FLUX] SUCCESS after retry! Image: {img.size}")
                     return img
-                print(f"      Still not ready: status={resp.status_code}")
+                print(f"      [HF-FLUX] Still not ready after retry: status={resp.status_code}")
+
+            elif resp.status_code == 401:
+                print(f"      [HF-FLUX] UNAUTHORIZED (401): Token invalid or expired")
+            elif resp.status_code == 429:
+                print(f"      [HF-FLUX] RATE LIMITED (429): Too many requests")
+            elif resp.status_code == 402:
+                print(f"      [HF-FLUX] PAYMENT REQUIRED (402): Insufficient credits")
             else:
-                print(f"      Failed: status={resp.status_code}")
-                if resp.status_code != 200:
-                    print(f"      Response: {resp.text[:200]}")
+                print(f"      [HF-FLUX] FAILED: status={resp.status_code}")
+                try:
+                    print(f"      [HF-FLUX] Error body: {resp.text[:200]}")
+                except Exception:
+                    pass
+
+        except requests.Timeout:
+            print(f"      [HF-FLUX] TIMEOUT after {self.HF_TIMEOUT}s")
         except Exception as e:
-            print(f"      Error: {e}")
+            print(f"      [HF-FLUX] ERROR: {type(e).__name__}: {e}")
+
         return None
 
     def _make_gradient(self, width=1024, height=768, colors=None) -> Image.Image:
-        print("\n    Creating gradient fallback background...")
+        """Create a gradient background using brand colors (local, no API)."""
+        print(f"      [GRADIENT] Creating gradient background: {width}x{height}")
+        print(f"      [GRADIENT] Input colors: {colors}")
         if not colors or len(colors) < 2:
+            print(f"      [GRADIENT] Using default dark gradient colors")
             colors = ["#1a1a2e", "#16213e", "#0f3460", "#533483"]
         img = Image.new("RGB", (width, height))
         draw = ImageDraw.Draw(img)
@@ -156,6 +142,7 @@ class ImageGenerator:
             g = int(c1[1] + (c2[1] - c1[1]) * t)
             b = int(c1[2] + (c2[2] - c1[2]) * t)
             draw.line([(0, y), (width, y)], fill=(r, g, b))
+        print(f"      [GRADIENT] Generated: {colors[0]} -> {colors[1]}")
         return img
 
 
@@ -192,10 +179,16 @@ class LocalAdImageGenerator:
         return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
 
     def generate(self, category, subcategory, accent_hex, secondary_hex, brand_name=""):
+        print(f"    [LOCAL-IMG] Generating local ad background")
+        print(f"    [LOCAL-IMG] Category: {category} | Subcategory: {subcategory}")
+        print(f"    [LOCAL-IMG] Brand: {brand_name or 'N/A'}")
+        print(f"    [LOCAL-IMG] Accent: {accent_hex} | Secondary: {secondary_hex}")
         accent = self._hex_to_rgb(accent_hex) if isinstance(accent_hex, str) else accent_hex
         secondary = self._hex_to_rgb(secondary_hex) if isinstance(secondary_hex, str) else secondary_hex
         theme = self.CATEGORY_THEMES.get(
             subcategory, self.CATEGORY_THEMES.get(category, "modern"))
+        print(f"    [LOCAL-IMG] Selected theme: {theme}")
+        print(f"    [LOCAL-IMG] Canvas size: {self.WIDTH}x{self.HEIGHT}")
 
         renderers = {
             "aqua": self._render_aqua,
@@ -207,9 +200,11 @@ class LocalAdImageGenerator:
             "corporate": self._render_corporate,
             "modern": self._render_modern,
         }
+        print(f"    [LOCAL-IMG] Rendering theme: {theme}...")
         img = renderers.get(theme, self._render_modern)(accent, secondary)
         img = ImageEnhance.Sharpness(img).enhance(1.15)
         img = ImageEnhance.Contrast(img).enhance(1.08)
+        print(f"    [LOCAL-IMG] Local image generated: {img.size} | Mode: {img.mode}")
         return img
 
     # -- Shared drawing utilities --

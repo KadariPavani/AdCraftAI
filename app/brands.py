@@ -95,9 +95,16 @@ class BrandMatcher:
         "water", "food", "clothes", "shirt", "pant", "dress",
     })
 
+    @staticmethod
+    def _canonical(name: str) -> str:
+        """Normalize brand name: keep original casing of the first occurrence
+        but use a lowercase key for grouping so 'DOMS' and 'Doms' merge."""
+        return name.strip().lower().replace(" ", "_")
+
     def __init__(self, id_to_metadata: Dict[int, dict]):
+        # Group by canonical (lowercased) key; keep the first-seen casing as display name
         brand_data: Dict[str, Dict] = defaultdict(
-            lambda: {"indices": [], "categories": Counter(), "subcategories": Counter()}
+            lambda: {"indices": [], "categories": Counter(), "subcategories": Counter(), "display_name": ""}
         )
         for idx, meta in id_to_metadata.items():
             brand_raw = meta.get("brand", "")
@@ -105,20 +112,26 @@ class BrandMatcher:
                 continue
             brand = brand_raw.strip()
             if brand and brand.lower() not in ("", "nan", "unknown"):
-                brand_data[brand]["indices"].append(idx)
-                brand_data[brand]["categories"][meta.get("category", "")] += 1
-                brand_data[brand]["subcategories"][meta.get("subcategory", "")] += 1
+                key = self._canonical(brand)
+                if not brand_data[key]["display_name"]:
+                    brand_data[key]["display_name"] = brand  # keep first-seen casing
+                brand_data[key]["indices"].append(idx)
+                brand_data[key]["categories"][meta.get("category", "")] += 1
+                brand_data[key]["subcategories"][meta.get("subcategory", "")] += 1
 
         self.brand_index: Dict[str, Dict] = {}
         self.brand_names: List[str] = []
         self.brand_names_lower: List[str] = []
+        self._canonical_to_name: Dict[str, str] = {}  # lowercase key -> display name
 
-        for brand, data in brand_data.items():
-            self.brand_names.append(brand)
-            self.brand_names_lower.append(brand.lower().replace("_", ""))
+        for key, data in brand_data.items():
+            display = data["display_name"]
+            self.brand_names.append(display)
+            self.brand_names_lower.append(key.replace("_", ""))
+            self._canonical_to_name[key] = display
             top_cat = data["categories"].most_common(1)
             top_sub = data["subcategories"].most_common(1)
-            self.brand_index[brand] = {
+            self.brand_index[display] = {
                 "indices": data["indices"],
                 "category": top_cat[0][0] if top_cat else "",
                 "subcategory": top_sub[0][0] if top_sub else "",
@@ -130,11 +143,16 @@ class BrandMatcher:
         ]
 
     def match(self, query: str) -> BrandMatch:
+        print(f"    [BRAND-MATCH] Matching query: \"{query}\"")
+        print(f"    [BRAND-MATCH] Algorithm: difflib fuzzy matching (cutoff=0.5)")
+        print(f"    [BRAND-MATCH] Brand database: {len(self.brand_names)} brands")
         words = query.lower().split()
         best_brand = None
         best_ratio = 0.0
         best_token = ""
+        print(f"    [BRAND-MATCH] Query tokens: {words}")
 
+        # Single word matching
         for word in words:
             if word in self.STOP_WORDS or len(word) < 2:
                 continue
@@ -149,7 +167,9 @@ class BrandMatcher:
                     idx = self.brand_names_lower.index(matches[0])
                     best_brand = self.brand_names[idx]
                     best_token = word
+                    print(f"    [BRAND-MATCH] Single-word match: \"{word}\" -> \"{best_brand}\" (ratio={ratio:.3f})")
 
+        # Two-word matching
         for i in range(len(words) - 1):
             if words[i] in self.STOP_WORDS and words[i + 1] in self.STOP_WORDS:
                 continue
@@ -164,7 +184,9 @@ class BrandMatcher:
                     idx = self.brand_names_with_spaces.index(matches[0])
                     best_brand = self.brand_names[idx]
                     best_token = pair
+                    print(f"    [BRAND-MATCH] Two-word match: \"{pair}\" -> \"{best_brand}\" (ratio={ratio:.3f})")
 
+        # Three-word matching
         for i in range(len(words) - 2):
             triple = f"{words[i]} {words[i + 1]} {words[i + 2]}"
             matches = difflib.get_close_matches(
@@ -177,9 +199,15 @@ class BrandMatcher:
                     idx = self.brand_names_with_spaces.index(matches[0])
                     best_brand = self.brand_names[idx]
                     best_token = triple
+                    print(f"    [BRAND-MATCH] Three-word match: \"{triple}\" -> \"{best_brand}\" (ratio={ratio:.3f})")
 
         if best_brand:
             info = self.brand_index[best_brand]
+            print(f"    [BRAND-MATCH] BEST MATCH: {best_brand} | Token: \"{best_token}\" | Confidence: {best_ratio:.3f}")
+            print(f"    [BRAND-MATCH] Category: {info['category']} / {info['subcategory']} | Images: {info['count']}")
+            tagline = BRAND_TAGLINES.get(best_brand, "")
+            if tagline:
+                print(f"    [BRAND-MATCH] Known tagline: \"{tagline}\"")
             return BrandMatch(
                 matched_brand=best_brand,
                 query_token=best_token,
@@ -188,6 +216,7 @@ class BrandMatcher:
                 subcategory=info["subcategory"],
                 image_count=info["count"],
             )
+        print(f"    [BRAND-MATCH] NO MATCH found for query: \"{query}\"")
         return BrandMatch()
 
     def get_brand_indices(self, brand_name: str) -> List[int]:

@@ -12,24 +12,34 @@ class ColorExtractor:
     RESIZE_DIM = 100
 
     def extract_from_images(self, image_paths: List[str], n_colors: int = 5) -> List[str]:
+        print(f"    [COLOR-EXT] Extracting dominant colors from {len(image_paths)} images")
+        print(f"    [COLOR-EXT] Algorithm: KMeans (k={n_colors}, n_init=10)")
+        print(f"    [COLOR-EXT] Resize: {self.RESIZE_DIM}x{self.RESIZE_DIM}")
         all_pixels = []
+        loaded = 0
         for path in image_paths:
             try:
                 img = Image.open(path).convert("RGB")
                 img_small = img.resize((self.RESIZE_DIM, self.RESIZE_DIM))
                 pixels = np.array(img_small).reshape(-1, 3)
                 all_pixels.append(pixels)
-            except Exception:
+                loaded += 1
+            except Exception as e:
+                print(f"    [COLOR-EXT] Failed to load: {path} ({e})")
                 continue
+        print(f"    [COLOR-EXT] Images loaded: {loaded}/{len(image_paths)}")
 
         if not all_pixels:
+            print(f"    [COLOR-EXT] No images loaded! Using default color palette")
             return ["#1a1a2e", "#16213e", "#0f3460", "#533483", "#e94560"]
 
         combined = np.vstack(all_pixels)
+        print(f"    [COLOR-EXT] Total pixels: {len(combined):,}")
         if len(combined) > 30000:
             rng = np.random.default_rng(42)
             indices = rng.choice(len(combined), 30000, replace=False)
             combined = combined[indices]
+            print(f"    [COLOR-EXT] Downsampled to 30,000 pixels")
 
         km = KMeans(n_clusters=n_colors, n_init=10, random_state=42)
         km.fit(combined)
@@ -39,9 +49,12 @@ class ColorExtractor:
         sorted_labels = sorted(counts.items(), key=lambda x: -x[1])
 
         hex_colors = []
-        for label, _ in sorted_labels:
+        for label, count in sorted_labels:
             c = colors_rgb[label]
-            hex_colors.append(f"#{c[0]:02x}{c[1]:02x}{c[2]:02x}")
+            hex_c = f"#{c[0]:02x}{c[1]:02x}{c[2]:02x}"
+            hex_colors.append(hex_c)
+            pct = count / len(km.labels_) * 100
+            print(f"    [COLOR-EXT]   {hex_c} | RGB({c[0]:3d},{c[1]:3d},{c[2]:3d}) | {pct:.1f}%")
         return hex_colors
 
     @staticmethod

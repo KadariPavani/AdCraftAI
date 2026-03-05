@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAdVerse - Dataset Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(0,0,0,0.15); }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .spinner { border: 3px solid #e5e7eb; border-top: 3px solid #6366f1; border-radius: 50%; width: 48px; height: 48px; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .tag { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 11px; font-weight: 500; margin: 2px; }
+        .tab-btn { padding: 8px 20px; border-radius: 8px; font-weight: 500; transition: all 0.2s; cursor: pointer; }
+        .tab-btn.active { background: #6366f1; color: white; }
+        .tab-btn:not(.active) { color: #6b7280; }
+        .tab-btn:not(.active):hover { background: #f3f4f6; }
+        .img-thumb { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: #f3f4f6; cursor: pointer; transition: transform 0.2s; }
+        .img-thumb:hover { transform: scale(1.05); }
+        .brand-card { transition: all 0.3s; border: 2px solid transparent; }
+        .brand-card:hover { border-color: #6366f1; }
+        .brand-card.expanded { border-color: #6366f1; box-shadow: 0 8px 24px rgba(99,102,241,0.15); }
+        .stat-card { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+        .progress-bar { height: 8px; border-radius: 4px; background: #e5e7eb; overflow: hidden; }
+        .progress-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
+        .search-input { transition: all 0.2s; }
+        .search-input:focus { box-shadow: 0 0 0 3px rgba(99,102,241,0.2); }
+        .cat-colors { --cat-footwear: #ef4444; --cat-clothing: #3b82f6; --cat-food: #f59e0b; --cat-auto: #6366f1; --cat-tech: #8b5cf6; --cat-personal: #ec4899; --cat-finance: #14b8a6; --cat-travel: #f97316; --cat-jewellery: #a855f7; --cat-drink: #06b6d4; --cat-other: #6b7280; }
+        /* Lightbox */
+        .lightbox { display: none; position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.85); align-items: center; justify-content: center; }
+        .lightbox.open { display: flex; }
+        .lightbox img { max-width: 90vw; max-height: 85vh; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+        .new-badge { background: linear-gradient(135deg, #10b981, #059669); color: white; font-size: 10px; padding: 2px 8px; border-radius: 9999px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .gen-badge { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; font-size: 10px; padding: 2px 8px; border-radius: 9999px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen cat-colors">
+
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm border-b border-gray-100 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center space-x-3">
+                    <a href="/" class="font-bold text-gray-900 text-lg hover:text-indigo-600 transition">AdCraft AI</a>
+                    <span class="text-gray-300">|</span>
+                    <span class="text-indigo-600 font-semibold text-sm">Dataset Explorer</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <a href="/" class="tab-btn">Dashboard</a>
+                    <button class="tab-btn active">Dataset</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Loading -->
+    <div id="loading" class="flex flex-col items-center justify-center py-32">
+        <div class="spinner mb-4"></div>
+        <p class="text-gray-500 font-medium">Loading dataset summary...</p>
+        <p class="text-gray-400 text-sm mt-1">Analyzing 61,000+ vectors</p>
+    </div>
+
+    <!-- Main Content (hidden until loaded) -->
+    <div id="mainContent" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- Header Stats -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-4 fade-in">
+            <div class="stat-card text-center">
+                <p class="text-3xl font-bold text-indigo-600" id="statBrands">-</p>
+                <p class="text-xs text-gray-500 mt-1 font-medium">Brands</p>
+            </div>
+            <div class="stat-card text-center">
+                <p class="text-3xl font-bold text-purple-600" id="statVectors">-</p>
+                <p class="text-xs text-gray-500 mt-1 font-medium">Total Images</p>
+            </div>
+            <div class="stat-card text-center">
+                <p class="text-3xl font-bold text-green-600" id="statLabeled">-</p>
+                <p class="text-xs text-gray-500 mt-1 font-medium">Labeled</p>
+            </div>
+            <div class="stat-card text-center">
+                <p class="text-3xl font-bold text-orange-400" id="statUnlabeled">-</p>
+                <p class="text-xs text-gray-500 mt-1 font-medium">Unlabeled</p>
+            </div>
+            <div class="stat-card text-center">
+                <p class="text-3xl font-bold text-blue-600" id="statCategories">-</p>
+                <p class="text-xs text-gray-500 mt-1 font-medium">Categories</p>
+            </div>
+            <div class="stat-card text-center">
+                <p class="text-3xl font-bold text-cyan-600" id="statSubcategories">-</p>
+                <p class="text-xs text-gray-500 mt-1 font-medium">Subcategories</p>
+            </div>
+            <div class="stat-card text-center">
+                <p class="text-3xl font-bold text-emerald-600" id="statGenerated">-</p>
+                <p class="text-xs text-gray-500 mt-1 font-medium">AI Generated</p>
+            </div>
+            <div class="stat-card text-center">
+                <p class="text-3xl font-bold text-amber-600" id="statProducts">-</p>
+                <p class="text-xs text-gray-500 mt-1 font-medium">DB Products</p>
+            </div>
+        </div>
+        <!-- Unlabeled info banner -->
+        <div id="unlabeledBanner" class="hidden bg-orange-50 border border-orange-200 rounded-xl px-4 py-3 mb-6 text-sm text-orange-700 fade-in">
+            <strong id="unlabeledPct">0%</strong> of images (<span id="unlabeledNum">0</span>) have no brand label in the source dataset.
+            Only <strong>labeled</strong> brands are shown below.
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex items-center space-x-2 mb-6 bg-white p-2 rounded-xl shadow-sm">
+            <button onclick="switchTab('brands')" class="tab-btn active" id="tabBrands">All Brands</button>
+            <button onclick="switchTab('new')" class="tab-btn" id="tabNew">Newly Created</button>
+            <button onclick="switchTab('categories')" class="tab-btn" id="tabCategories">Categories</button>
+            <button onclick="switchTab('overview')" class="tab-btn" id="tabOverview">Overview</button>
+        </div>
+
+        <!-- Search & Filter -->
+        <div class="flex flex-col sm:flex-row gap-3 mb-6" id="searchBar">
+            <div class="relative flex-1">
+                <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+                <input type="text" id="searchInput" placeholder="Search brands, categories..."
+                    class="search-input w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl bg-white focus:outline-none focus:border-indigo-400 text-sm"
+                    oninput="filterBrands()">
+            </div>
+            <select id="categoryFilter" onchange="filterBrands()"
+                class="px-4 py-3 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-indigo-400 cursor-pointer">
+                <option value="">All Categories</option>
+            </select>
+            <select id="sortBy" onchange="filterBrands()"
+                class="px-4 py-3 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-indigo-400 cursor-pointer">
+                <option value="images_desc">Most Images</option>
+                <option value="images_asc">Least Images</option>
+                <option value="name_asc">A - Z</option>
+                <option value="name_desc">Z - A</option>
+                <option value="generated">Most Generated</option>
+            </select>
+        </div>
+
+        <!-- Brands Tab -->
+        <div id="brandsTab">
+            <p class="text-sm text-gray-500 mb-4"><span id="brandCount">0</span> brands shown</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" id="brandsGrid"></div>
+        </div>
+
+        <!-- Newly Created Tab -->
+        <div id="newTab" class="hidden">
+            <div class="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-2xl p-6 mb-6 border border-emerald-100">
+                <h2 class="text-lg font-bold text-emerald-800 mb-1">Newly Created Brands</h2>
+                <p class="text-emerald-600 text-sm">These brands were created entirely through AI generation and added to the dataset.</p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4" id="newBrandsGrid"></div>
+            <div id="noNewBrands" class="hidden text-center py-16">
+                <p class="text-gray-400 text-lg">No newly created brands yet.</p>
+                <p class="text-gray-400 text-sm mt-1">Generate ads for new brands and they'll appear here.</p>
+            </div>
+        </div>
+
+        <!-- Categories Tab -->
+        <div id="categoriesTab" class="hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="categoriesGrid"></div>
+        </div>
+
+        <!-- Overview Tab -->
+        <div id="overviewTab" class="hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Languages -->
+                <div class="bg-white rounded-2xl p-6 shadow-sm">
+                    <h3 class="font-bold text-gray-800 mb-4">Languages</h3>
+                    <div id="languagesList"></div>
+                </div>
+                <!-- Ad Types -->
+                <div class="bg-white rounded-2xl p-6 shadow-sm">
+                    <h3 class="font-bold text-gray-800 mb-4">Ad Types</h3>
+                    <div id="adTypesList"></div>
+                </div>
+                <!-- Sources -->
+                <div class="bg-white rounded-2xl p-6 shadow-sm">
+                    <h3 class="font-bold text-gray-800 mb-4">Data Sources</h3>
+                    <div id="sourcesList"></div>
+                </div>
+                <!-- DB Products -->
+                <div class="bg-white rounded-2xl p-6 shadow-sm">
+                    <h3 class="font-bold text-gray-800 mb-4">Database Products</h3>
+                    <div id="dbProductsList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lightbox -->
+    <div class="lightbox" id="lightbox" onclick="closeLightbox()">
+        <button onclick="closeLightbox()" class="absolute top-4 right-4 text-white text-3xl font-light hover:text-gray-300 z-10">&times;</button>
+        <img id="lightboxImg" src="" alt="Preview">
+    </div>
+
+    <script>
+    let DATA = null;
+    let allBrands = [];
+    const CAT_COLORS = {
+        'Footwear': '#ef4444', 'Clothing & Apparel': '#3b82f6', 'Food & Beverages': '#f59e0b',
+        'Automobile': '#6366f1', 'Technology & Electronics': '#8b5cf6', 'Personal Care & Beauty': '#ec4899',
+        'Banking & Finance': '#14b8a6', 'Travel & Hospitality': '#f97316', 'Jewellery & Accessories': '#a855f7',
+        'Drinks & Beverages': '#06b6d4', 'Home & Living': '#84cc16', 'Unknown': '#6b7280',
+    };
+
+    function getCatColor(cat) {
+        if (CAT_COLORS[cat]) return CAT_COLORS[cat];
+        // fallback: hash-based
+        let hash = 0;
+        for (let i = 0; i < cat.length; i++) hash = cat.charCodeAt(i) + ((hash << 5) - hash);
+        const hue = Math.abs(hash) % 360;
+        return `hsl(${hue}, 60%, 50%)`;
+    }
+
+    async function loadData() {
+        try {
+            const resp = await fetch('/api/dataset-summary');
+            DATA = await resp.json();
+            allBrands = DATA.brands || [];
+            renderStats();
+            populateFilters();
+            filterBrands();
+            renderNewBrands();
+            renderCategories();
+            renderOverview();
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('mainContent').classList.remove('hidden');
+        } catch (e) {
+            document.getElementById('loading').innerHTML =
+                `<p class="text-red-500 font-medium">Failed to load dataset</p>
+                 <p class="text-red-400 text-sm mt-1">${e.message}</p>
+                 <button onclick="loadData()" class="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">Retry</button>`;
+        }
+    }
+
+    function renderStats() {
+        document.getElementById('statBrands').textContent = DATA.total_brands.toLocaleString();
+        document.getElementById('statVectors').textContent = DATA.total_vectors.toLocaleString();
+        document.getElementById('statLabeled').textContent = (DATA.total_labeled_images || 0).toLocaleString();
+        document.getElementById('statUnlabeled').textContent = (DATA.total_unlabeled_images || 0).toLocaleString();
+        document.getElementById('statCategories').textContent = DATA.total_categories;
+        document.getElementById('statSubcategories').textContent = DATA.total_subcategories;
+        document.getElementById('statGenerated').textContent = DATA.total_generated_images;
+        document.getElementById('statProducts').textContent = DATA.total_products_in_db;
+
+        // Unlabeled banner
+        if (DATA.total_unlabeled_images > 0) {
+            const pct = ((DATA.total_unlabeled_images / DATA.total_vectors) * 100).toFixed(1);
+            document.getElementById('unlabeledPct').textContent = pct + '%';
+            document.getElementById('unlabeledNum').textContent = DATA.total_unlabeled_images.toLocaleString();
+            document.getElementById('unlabeledBanner').classList.remove('hidden');
+        }
+    }
+
+    function populateFilters() {
+        const sel = document.getElementById('categoryFilter');
+        Object.keys(DATA.categories).sort().forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat;
+            opt.textContent = `${cat} (${DATA.categories[cat]})`;
+            sel.appendChild(opt);
+        });
+    }
+
+    function filterBrands() {
+        const query = document.getElementById('searchInput').value.toLowerCase().trim();
+        const catFilter = document.getElementById('categoryFilter').value;
+        const sortBy = document.getElementById('sortBy').value;
+
+        let filtered = allBrands.filter(b => {
+            const matchQ = !query || b.brand.toLowerCase().includes(query)
+                || Object.keys(b.categories).some(c => c.toLowerCase().includes(query))
+                || Object.keys(b.subcategories).some(s => s.toLowerCase().includes(query))
+                || (b.tagline && b.tagline.toLowerCase().includes(query));
+            const matchCat = !catFilter || b.categories[catFilter];
+            return matchQ && matchCat;
+        });
+
+        // Sort
+        if (sortBy === 'images_desc') filtered.sort((a, b) => b.image_count - a.image_count);
+        else if (sortBy === 'images_asc') filtered.sort((a, b) => a.image_count - b.image_count);
+        else if (sortBy === 'name_asc') filtered.sort((a, b) => a.brand.localeCompare(b.brand));
+        else if (sortBy === 'name_desc') filtered.sort((a, b) => b.brand.localeCompare(a.brand));
+        else if (sortBy === 'generated') filtered.sort((a, b) => b.generated_count - a.generated_count);
+
+        document.getElementById('brandCount').textContent = filtered.length;
+        renderBrandsGrid(filtered);
+    }
+
+    const FALLBACK_SVG = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="#e5e7eb" width="100" height="100"/><text x="50" y="50" text-anchor="middle" dy=".3em" fill="#9ca3af" font-size="12">No img</text></svg>');
+
+    function renderBrandsGrid(brands) {
+        const grid = document.getElementById('brandsGrid');
+        grid.innerHTML = '';
+
+        brands.forEach(b => {
+            const cats = Object.keys(b.categories);
+            const subcats = Object.keys(b.subcategories);
+            const mainCat = cats[0] || 'Unknown';
+            const isNew = b.generated_count > 0 && b.ad_types.generated === b.image_count;
+            const hasGenerated = b.generated_count > 0;
+            const displayName = b.brand.replace(/_/g, ' ');
+
+            const card = document.createElement('div');
+            card.className = 'brand-card bg-white rounded-2xl overflow-hidden shadow-sm card-hover fade-in';
+
+            // Build images row
+            const imagesDiv = document.createElement('div');
+            imagesDiv.className = 'grid gap-1 p-2 bg-gray-50';
+            imagesDiv.style.minHeight = '80px';
+            imagesDiv.style.gridTemplateColumns = `repeat(${Math.min(b.sample_images.length || 1, 4)}, 1fr)`;
+
+            if (b.sample_images.length > 0) {
+                b.sample_images.slice(0, 4).forEach(url => {
+                    const img = document.createElement('img');
+                    img.className = 'img-thumb';
+                    img.src = url;
+                    img.loading = 'lazy';
+                    img.onerror = function() { this.src = FALLBACK_SVG; };
+                    img.onclick = function(e) { e.stopPropagation(); openLightbox(url); };
+                    imagesDiv.appendChild(img);
+                });
+            } else {
+                imagesDiv.style.gridTemplateColumns = '1fr';
+                imagesDiv.innerHTML = '<div class="flex items-center justify-center text-gray-400 text-xs">No preview available</div>';
+            }
+
+            // Build info section
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'p-4';
+            infoDiv.innerHTML = `
+                <div class="flex items-center justify-between mb-1">
+                    <h3 class="font-bold text-gray-900 text-sm truncate flex-1">${displayName}</h3>
+                    <div class="flex gap-1 ml-2">
+                        ${isNew ? '<span class="new-badge">New</span>' : ''}
+                        ${hasGenerated && !isNew ? '<span class="gen-badge">+AI</span>' : ''}
+                    </div>
+                </div>
+                ${b.tagline ? `<p class="text-xs text-gray-400 italic mb-2 truncate">"${b.tagline}"</p>` : '<div class="mb-2"></div>'}
+                <div class="flex items-center justify-between text-xs text-gray-500 mb-3">
+                    <span><strong class="text-gray-700">${b.image_count}</strong> images</span>
+                    ${b.generated_count > 0 ? `<span class="text-indigo-500"><strong>${b.generated_count}</strong> generated</span>` : ''}
+                </div>
+                <div class="flex flex-wrap gap-1">
+                    ${cats.map(c => `<span class="tag text-white" style="background:${getCatColor(c)}">${c}</span>`).join('')}
+                </div>
+                ${subcats.filter(s => s !== 'Unknown').length > 0 ? `
+                    <div class="flex flex-wrap gap-1 mt-1">
+                        ${subcats.filter(s => s !== 'Unknown').slice(0, 3).map(s =>
+                            `<span class="tag bg-gray-100 text-gray-600">${s}</span>`
+                        ).join('')}
+                        ${subcats.filter(s => s !== 'Unknown').length > 3 ? `<span class="tag bg-gray-100 text-gray-400">+${subcats.length - 3}</span>` : ''}
+                    </div>
+                ` : ''}
+            `;
+
+            card.appendChild(imagesDiv);
+            card.appendChild(infoDiv);
+            grid.appendChild(card);
+        });
+
+        if (brands.length === 0) {
+            grid.innerHTML = '<div class="col-span-full text-center py-16"><p class="text-gray-400">No brands match your search</p></div>';
+        }
+    }
+
+    function renderNewBrands() {
+        const newBrands = DATA.newly_created_brands || [];
+        const grid = document.getElementById('newBrandsGrid');
+        const empty = document.getElementById('noNewBrands');
+
+        if (newBrands.length === 0) {
+            grid.classList.add('hidden');
+            empty.classList.remove('hidden');
+            return;
+        }
+
+        empty.classList.add('hidden');
+        grid.classList.remove('hidden');
+        grid.innerHTML = '';
+
+        newBrands.forEach(b => {
+            const displayName = b.brand.replace(/_/g, ' ');
+            const card = document.createElement('div');
+            card.className = 'bg-white rounded-2xl overflow-hidden shadow-sm card-hover fade-in border-2 border-emerald-200';
+
+            // Images
+            const imgsDiv = document.createElement('div');
+            imgsDiv.className = 'grid gap-1 p-2 bg-emerald-50';
+            imgsDiv.style.minHeight = '100px';
+            imgsDiv.style.gridTemplateColumns = `repeat(${Math.min(b.sample_images.length || 1, 4)}, 1fr)`;
+            if (b.sample_images.length > 0) {
+                b.sample_images.slice(0, 4).forEach(url => {
+                    const img = document.createElement('img');
+                    img.className = 'img-thumb';
+                    img.src = url;
+                    img.loading = 'lazy';
+                    img.onerror = function() { this.src = FALLBACK_SVG; };
+                    img.onclick = function(e) { e.stopPropagation(); openLightbox(url); };
+                    imgsDiv.appendChild(img);
+                });
+            } else {
+                imgsDiv.style.gridTemplateColumns = '1fr';
+                imgsDiv.innerHTML = '<div class="flex items-center justify-center text-emerald-400 text-sm">No preview</div>';
+            }
+
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'p-5';
+            infoDiv.innerHTML = `
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="new-badge">AI Created</span>
+                    <h3 class="font-bold text-gray-900">${displayName}</h3>
+                </div>
+                <div class="text-sm text-gray-500 mb-3">
+                    <span class="font-semibold text-emerald-600">${b.image_count}</span> generated images
+                </div>
+                <div class="flex flex-wrap gap-1">
+                    ${Object.keys(b.categories).map(c => `<span class="tag text-white" style="background:${getCatColor(c)}">${c}</span>`).join('')}
+                    ${Object.keys(b.subcategories).filter(s => s !== 'Unknown').map(s => `<span class="tag bg-gray-100 text-gray-600">${s}</span>`).join('')}
+                </div>
+            `;
+            card.appendChild(imgsDiv);
+            card.appendChild(infoDiv);
+            grid.appendChild(card);
+        });
+    }
+
+    function renderCategories() {
+        const grid = document.getElementById('categoriesGrid');
+        const tree = DATA.category_tree || {};
+        const total = DATA.total_vectors;
+        grid.innerHTML = '';
+
+        Object.keys(tree).sort((a, b) => {
+            const sumA = Object.values(tree[a]).reduce((s, v) => s + v, 0);
+            const sumB = Object.values(tree[b]).reduce((s, v) => s + v, 0);
+            return sumB - sumA;
+        }).forEach(cat => {
+            const subs = tree[cat];
+            const catTotal = Object.values(subs).reduce((s, v) => s + v, 0);
+            const pct = ((catTotal / total) * 100).toFixed(1);
+            const color = getCatColor(cat);
+            const subEntries = Object.entries(subs).sort((a, b) => b[1] - a[1]);
+
+            const card = document.createElement('div');
+            card.className = 'bg-white rounded-2xl p-5 shadow-sm fade-in';
+            card.innerHTML = `
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-3 h-3 rounded-full" style="background:${color}"></div>
+                        <h3 class="font-bold text-gray-800">${cat}</h3>
+                    </div>
+                    <span class="text-sm text-gray-500"><strong>${catTotal.toLocaleString()}</strong> images (${pct}%)</span>
+                </div>
+                <div class="progress-bar mb-4">
+                    <div class="progress-fill" style="width:${pct}%; background:${color}"></div>
+                </div>
+                <div class="space-y-2">
+                    ${subEntries.slice(0, 8).map(([sub, count]) => {
+                        const subPct = ((count / catTotal) * 100).toFixed(0);
+                        return `
+                            <div class="flex items-center justify-between text-sm">
+                                <span class="text-gray-600 truncate flex-1">${sub}</span>
+                                <div class="flex items-center gap-2 ml-2">
+                                    <div class="w-24 h-2 rounded-full bg-gray-100 overflow-hidden">
+                                        <div class="h-full rounded-full" style="width:${subPct}%; background:${color}; opacity:0.6"></div>
+                                    </div>
+                                    <span class="text-gray-400 text-xs w-12 text-right">${count}</span>
+                                </div>
+                            </div>`;
+                    }).join('')}
+                    ${subEntries.length > 8 ? `<p class="text-xs text-gray-400 mt-1">+${subEntries.length - 8} more subcategories</p>` : ''}
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    }
+
+    function renderOverview() {
+        // Languages
+        renderBarList('languagesList', DATA.languages, DATA.total_vectors, '#6366f1');
+        // Ad Types
+        renderBarList('adTypesList', DATA.ad_types, DATA.total_vectors, '#8b5cf6');
+        // Sources
+        renderBarList('sourcesList', DATA.sources, DATA.total_vectors, '#14b8a6');
+        // DB Products
+        const dbEl = document.getElementById('dbProductsList');
+        if (Object.keys(DATA.db_brands).length === 0) {
+            dbEl.innerHTML = '<p class="text-gray-400 text-sm">No products in database yet.</p>';
+        } else {
+            let html = '<div class="space-y-3">';
+            html += `<p class="text-sm text-gray-500 mb-3"><strong class="text-gray-700">${DATA.total_products_in_db}</strong> products stored</p>`;
+            html += '<p class="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">By Brand</p>';
+            Object.entries(DATA.db_brands).forEach(([brand, count]) => {
+                html += `<div class="flex items-center justify-between text-sm">
+                    <span class="text-gray-700">${brand.replace(/_/g, ' ')}</span>
+                    <span class="text-gray-400">${count}</span>
+                </div>`;
+            });
+            if (Object.keys(DATA.db_categories).length) {
+                html += '<p class="text-xs font-semibold text-gray-500 mt-4 mb-2 uppercase tracking-wide">By Category</p>';
+                Object.entries(DATA.db_categories).forEach(([cat, count]) => {
+                    html += `<div class="flex items-center justify-between text-sm">
+                        <span class="text-gray-700">${cat}</span>
+                        <span class="text-gray-400">${count}</span>
+                    </div>`;
+                });
+            }
+            html += '</div>';
+            dbEl.innerHTML = html;
+        }
+    }
+
+    function renderBarList(elId, data, total, color) {
+        const el = document.getElementById(elId);
+        const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+        let html = '<div class="space-y-3">';
+        entries.forEach(([key, count]) => {
+            const pct = ((count / total) * 100).toFixed(1);
+            html += `
+                <div>
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="text-gray-700 capitalize">${key}</span>
+                        <span class="text-gray-400">${count.toLocaleString()} (${pct}%)</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width:${pct}%; background:${color}"></div>
+                    </div>
+                </div>`;
+        });
+        html += '</div>';
+        el.innerHTML = html;
+    }
+
+    // Tabs
+    function switchTab(tab) {
+        ['brands', 'new', 'categories', 'overview'].forEach(t => {
+            document.getElementById(t + 'Tab').classList.toggle('hidden', t !== tab);
+            const btn = document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1));
+            if (btn) btn.classList.toggle('active', t === tab);
+        });
+        // Show/hide search bar
+        document.getElementById('searchBar').classList.toggle('hidden', tab !== 'brands');
+    }
+
+    // Lightbox
+    function openLightbox(url) {
+        document.getElementById('lightboxImg').src = url;
+        document.getElementById('lightbox').classList.add('open');
+    }
+    function closeLightbox() {
+        document.getElementById('lightbox').classList.remove('open');
+        document.getElementById('lightboxImg').src = '';
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
+    // Init
+    loadData();
+    </script>
+</body>
+</html>

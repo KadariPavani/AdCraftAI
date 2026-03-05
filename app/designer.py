@@ -776,6 +776,19 @@ class ProAdDesigner:
     # --- Main compose entry point ---
 
     def compose(self, content) -> Image.Image:
+        print(f"    [DESIGNER] Composing ad pamphlet...")
+        print(f"    [DESIGNER] Canvas: {self.WIDTH}x{self.HEIGHT}")
+        print(f"    [DESIGNER] Brand: {content.brand_name}")
+        print(f"    [DESIGNER] Headline: \"{content.headline[:50]}{'...' if len(content.headline) > 50 else ''}\"")
+        print(f"    [DESIGNER] Tagline: \"{content.tagline}\"")
+        print(f"    [DESIGNER] Features: {len(content.features)}")
+        print(f"    [DESIGNER] CTA: \"{content.cta_text}\"")
+        print(f"    [DESIGNER] Product image: {'YES' if content.product_image else 'NO'}")
+        print(f"    [DESIGNER] Logo: {'YES' if content.logo_image else 'NO'}")
+        print(f"    [DESIGNER] Thumbnails: {len(content.thumbnail_images)}")
+        print(f"    [DESIGNER] Colors: accent={content.accent_color}, secondary={content.secondary_color}")
+        print(f"    [DESIGNER] Bilingual: {'YES' if content.headline_secondary else 'NO'}")
+
         # Detect script from headline/features/CTA for correct font selection
         sample_text = " ".join([
             content.headline or "",
@@ -784,21 +797,31 @@ class ProAdDesigner:
             content.cta_text or "",
         ])
         self._script = self._detect_script(sample_text)
+        print(f"    [DESIGNER] Detected script: {self._script}")
+        font_system = {"latin": "Segoe UI / Impact / Calibri", "indic": "Nirmala UI", "cjk": "Microsoft YaHei", "arabic": "Segoe UI"}
+        print(f"    [DESIGNER] Font system: {font_system.get(self._script, 'default')}")
 
         # If no product image, use branded typography-focused ad
         if content.product_image is None:
+            print(f"    [DESIGNER] No product image -> Typography-focused ad layout")
             self._analysis = {"text_side": "left", "free_row": 0, "free_col": 2,
                               "avg_brightness": 60, "is_dark": True,
                               "complexity_grid": np.zeros((3, 3))}
             canvas = self._render_no_image_ad(content)
+            print(f"    [DESIGNER] Rendered: no-image typography ad")
             return self._apply_post_processing(canvas)
 
         # AI analysis of product image for dynamic layout
+        print(f"    [DESIGNER] Analyzing product image for dynamic layout...")
         self._analysis = self._analyze_image(content.product_image)
+        print(f"    [DESIGNER] Analysis: text_side={self._analysis.get('text_side')}, is_dark={self._analysis.get('is_dark')}, avg_brightness={self._analysis.get('avg_brightness', 0):.0f}")
 
         theme = self._select_theme(content)
+        print(f"    [DESIGNER] Selected theme: {theme}")
+        print(f"    [DESIGNER] Available themes: {self.THEMES}")
         renderer = self._theme_renderers[theme]
         canvas = renderer(content)
+        print(f"    [DESIGNER] Rendered: {theme} theme")
         return self._apply_post_processing(canvas)
 
     # === NO-IMAGE AD: Professional branded typography ad ===

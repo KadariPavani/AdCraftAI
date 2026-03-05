@@ -156,16 +156,24 @@ class CLIPContentExtractor:
         """Generate a rich image prompt by analyzing the retrieved reference ads.
         CLIP ranks styles, moods, and subjects against the actual ad images from
         the dataset to build a context-aware prompt — no hardcoded category templates."""
+        print(f"    [CLIP-PROMPT] Generating diffusion prompt from {len(image_paths)} reference images")
+        print(f"    [CLIP-PROMPT] Model: openai/clip-vit-base-patch32 (vision encoder)")
         img_feats = self._encode_images(image_paths)
+        print(f"    [CLIP-PROMPT] Image features encoded: shape={img_feats.shape}")
 
         # Let CLIP pick the best-matching style, mood, and subject from the pools
-        # based on what the retrieved reference images actually look like
+        print(f"    [CLIP-PROMPT] Ranking pools against reference images:")
         top_styles = self._rank_pool(img_feats, self.STYLE_POOL, 2)
+        print(f"    [CLIP-PROMPT]   Styles (top 2): {top_styles}")
         top_moods = self._rank_pool(img_feats, self.MOOD_POOL, 1)
+        print(f"    [CLIP-PROMPT]   Moods (top 1): {top_moods}")
         top_subjects = self._rank_pool(img_feats, self.SUBJECT_POOL, 1)
+        print(f"    [CLIP-PROMPT]   Subjects (top 1): {top_subjects}")
 
         brand_clean = brand.replace("_", " ")
         query_subject = self._extract_query_subject(user_query, brand_clean)
+        if query_subject:
+            print(f"    [CLIP-PROMPT]   Query subject: \"{query_subject}\"")
 
         parts = [f"professional commercial advertisement photography for {brand_clean}"]
 
@@ -178,7 +186,9 @@ class CLIPContentExtractor:
         parts.append(f"{top_moods[0]} mood")
         parts.append("ultra realistic, photorealistic, 8k, sharp focus, professional lighting, commercial quality")
 
-        return ", ".join(parts)
+        prompt = ", ".join(parts)
+        print(f"    [CLIP-PROMPT] Final prompt ({len(prompt)} chars)")
+        return prompt
 
     def _extract_query_subject(self, user_query, brand_clean):
         """Extract meaningful product description from user query."""

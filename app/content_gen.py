@@ -21,43 +21,78 @@ class PollinationsTextGenerator:
     TIMEOUT = 60
 
     def generate(self, system_prompt: str, user_prompt: str, model: str = "openai") -> Optional[str]:
+        print(f"      [POLLINATIONS-TEXT] Plain text generation request")
+        print(f"      [POLLINATIONS-TEXT] URL: {self.URL}")
+        print(f"      [POLLINATIONS-TEXT] Model: {model}")
+        print(f"      [POLLINATIONS-TEXT] Timeout: {self.TIMEOUT}s")
+        print(f"      [POLLINATIONS-TEXT] System prompt: {system_prompt[:80]}...")
+        print(f"      [POLLINATIONS-TEXT] User prompt: {user_prompt[:80]}...")
         try:
+            seed = int(time.time()) % 10000
             payload = {
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 "model": model,
-                "seed": int(time.time()) % 10000,
+                "seed": seed,
                 "jsonMode": False,
             }
+            print(f"      [POLLINATIONS-TEXT] Seed: {seed} | jsonMode: False")
+            t0 = time.time()
             resp = requests.post(self.URL, json=payload, timeout=self.TIMEOUT)
+            elapsed = time.time() - t0
+            print(f"      [POLLINATIONS-TEXT] Response: status={resp.status_code} | size={len(resp.text)} chars | time={elapsed:.2f}s")
             if resp.status_code == 200 and len(resp.text) > 10:
-                return resp.text.strip()
-        except Exception:
-            pass
+                result = resp.text.strip()
+                print(f"      [POLLINATIONS-TEXT] SUCCESS: \"{result[:100]}{'...' if len(result) > 100 else ''}\"")
+                return result
+            else:
+                print(f"      [POLLINATIONS-TEXT] FAILED: status={resp.status_code}, response too short ({len(resp.text)} chars)")
+        except requests.Timeout:
+            print(f"      [POLLINATIONS-TEXT] TIMEOUT after {self.TIMEOUT}s")
+        except Exception as e:
+            print(f"      [POLLINATIONS-TEXT] ERROR: {e}")
         return None
 
     def generate_json(self, system_prompt: str, user_prompt: str) -> Optional[dict]:
+        print(f"      [POLLINATIONS-JSON] JSON generation request")
+        print(f"      [POLLINATIONS-JSON] URL: {self.URL}")
+        print(f"      [POLLINATIONS-JSON] Model: openai")
+        print(f"      [POLLINATIONS-JSON] Timeout: {self.TIMEOUT}s")
         try:
+            seed = int(time.time()) % 10000
             payload = {
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
                 "model": "openai",
-                "seed": int(time.time()) % 10000,
+                "seed": seed,
                 "jsonMode": True,
             }
+            print(f"      [POLLINATIONS-JSON] Seed: {seed} | jsonMode: True")
+            t0 = time.time()
             resp = requests.post(self.URL, json=payload, timeout=self.TIMEOUT)
+            elapsed = time.time() - t0
+            print(f"      [POLLINATIONS-JSON] Response: status={resp.status_code} | size={len(resp.text)} chars | time={elapsed:.2f}s")
             if resp.status_code == 200:
                 text = resp.text.strip()
                 if text.startswith("```"):
+                    print(f"      [POLLINATIONS-JSON] Stripping markdown code fences from response")
                     text = re.sub(r'^```(?:json)?\s*', '', text)
                     text = re.sub(r'\s*```$', '', text)
-                return json.loads(text)
-        except Exception:
-            pass
+                parsed = json.loads(text)
+                print(f"      [POLLINATIONS-JSON] SUCCESS: Parsed JSON with {len(parsed)} keys: {list(parsed.keys())}")
+                return parsed
+            else:
+                print(f"      [POLLINATIONS-JSON] FAILED: status={resp.status_code}")
+        except json.JSONDecodeError as e:
+            print(f"      [POLLINATIONS-JSON] JSON PARSE ERROR: {e}")
+        except requests.Timeout:
+            print(f"      [POLLINATIONS-JSON] TIMEOUT after {self.TIMEOUT}s")
+        except Exception as e:
+            print(f"      [POLLINATIONS-JSON] ERROR: {e}")
         return None
 
 
@@ -69,6 +104,7 @@ class ContentGenerator:
     def __init__(self, clip_extractor):
         self.clip = clip_extractor
         self.text_gen = PollinationsTextGenerator()
+        print(f"    [CONTENT-GEN] ContentGenerator initialized with CLIP extractor + Pollinations text gen")
 
     def generate_product_content(
         self, brand: str, category: str, subcategory: str,
@@ -81,13 +117,18 @@ class ContentGenerator:
         # Extract product type from user query
         product_desc = self._extract_product_from_query(query, brand_clean)
         display_product = product_desc if product_desc else sub_clean
+        print(f"    [CONTENT-GEN] Extracted product: \"{display_product}\" from query: \"{query}\"")
 
         # Try AI generation for everything
+        print(f"    [CONTENT-GEN] Attempting AI generation (Pollinations openai model)...")
         ai_content = self._generate_all_via_ai(brand_clean, category, display_product, query)
         if ai_content:
+            print(f"    [CONTENT-GEN] SUCCESS: AI-generated content with {len(ai_content)} fields")
             return ai_content
 
         # Minimal fallback — just brand name, no hardcoded marketing copy
+        print(f"    [CONTENT-GEN] FALLBACK: AI generation failed! Using minimal brand-only content")
+        print(f"    [CONTENT-GEN] FALLBACK: No hardcoded marketing copy — only brand name used")
         return {
             "product_title": f"{brand_clean} {display_product.title()}",
             "product_description": f"{brand_clean} {display_product}",
@@ -120,6 +161,8 @@ class ContentGenerator:
         self, brand: str, category: str, product: str, query: str
     ) -> Optional[Dict[str, Any]]:
         """Call Pollinations AI to generate ALL ad text content in one shot."""
+        print(f"    [AI-CONTENT] Attempting full JSON content generation...")
+        print(f"    [AI-CONTENT] Brand: {brand} | Category: {category} | Product: {product}")
         system_prompt = (
             "You are an expert advertising copywriter. Given a brand and product, "
             "generate compelling ad content. Output ONLY valid JSON with these exact keys:\n"
@@ -150,6 +193,7 @@ class ContentGenerator:
         )
 
         try:
+            print(f"    [AI-CONTENT] Calling Pollinations JSON API...")
             result = self.text_gen.generate_json(system_prompt, user_prompt)
             if result and isinstance(result, dict):
                 # Validate we got the essential fields
@@ -158,7 +202,9 @@ class ContentGenerator:
                 cta = result.get("cta_text", "")
 
                 if headline and len(headline) > 2 and features and len(features) >= 2:
-                    print(f"  AI content: headline='{headline}', cta='{cta}', features={len(features)}")
+                    print(f"    [AI-CONTENT] JSON generation SUCCESS!")
+                    print(f"    [AI-CONTENT] headline='{headline}' | cta='{cta}' | features={len(features)}")
+                    print(f"    [AI-CONTENT] tagline='{result.get('tagline', '')}' | hashtags={result.get('hashtags', [])}")
                     return {
                         "product_title": result.get("product_title", f"{brand} {product}"),
                         "product_description": result.get("product_description", ""),
@@ -170,10 +216,15 @@ class ContentGenerator:
                         "features": features[:6],
                         "cta_text": cta.upper() if cta else "",
                     }
+                else:
+                    print(f"    [AI-CONTENT] JSON response incomplete: headline='{headline}' ({len(headline)} chars), features={len(features)}")
+            else:
+                print(f"    [AI-CONTENT] JSON generation returned None or non-dict")
         except Exception as e:
-            print(f"  AI content generation failed: {e}")
+            print(f"    [AI-CONTENT] JSON generation FAILED: {e}")
 
         # Try plain text fallback (non-JSON)
+        print(f"    [AI-CONTENT] FALLBACK: Trying plain text headline generation...")
         try:
             fallback_prompt = (
                 "You are an ad copywriter. Write a short catchy headline (3-6 words) "
@@ -186,6 +237,8 @@ class ContentGenerator:
             )
             if headline and 3 < len(headline) < 60:
                 headline = headline.strip('"').strip("'").strip()
+                print(f"    [AI-CONTENT] Plain text headline SUCCESS: \"{headline}\"")
+                print(f"    [AI-CONTENT] Note: Only headline generated, other fields minimal")
                 return {
                     "product_title": f"{brand} {product.title()}",
                     "product_description": f"{brand} {product}",
@@ -197,9 +250,12 @@ class ContentGenerator:
                     "features": [],
                     "cta_text": "",
                 }
-        except Exception:
-            pass
+            else:
+                print(f"    [AI-CONTENT] Plain text headline invalid: \"{headline}\" ({len(headline) if headline else 0} chars)")
+        except Exception as e:
+            print(f"    [AI-CONTENT] Plain text headline FAILED: {e}")
 
+        print(f"    [AI-CONTENT] ALL AI generation attempts failed! Returning None")
         return None
 
     def generate_ad_content_for_language(
@@ -207,6 +263,7 @@ class ContentGenerator:
         features: List[str], tagline: str, query: str, language: str
     ) -> Optional[Dict[str, str]]:
         """Return None — translations handled by the Translator class."""
+        print(f"    [CONTENT-GEN] generate_ad_content_for_language({language}) -> None (handled by Translator)")
         return None
 
 
@@ -217,12 +274,15 @@ class ContentGenerator:
 class Translator:
     def __init__(self):
         self._translator = None
+        print(f"    [TRANSLATOR] Translator initialized (engine: GoogleTranslator via deep_translator)")
+        print(f"    [TRANSLATOR] Cost: FREE | No API key required")
 
     def _get_translator(self, source: str, target: str):
         try:
             from deep_translator import GoogleTranslator
             return GoogleTranslator(source=source, target=target)
         except ImportError:
+            print(f"    [TRANSLATOR] ERROR: deep_translator not installed!")
             return None
 
     def translate(self, text: str, target_lang: str, source_lang: str = "en") -> str:
@@ -231,14 +291,21 @@ class Translator:
         try:
             translator = self._get_translator(source_lang, target_lang)
             if translator:
-                return translator.translate(text)
-        except Exception:
-            pass
+                t0 = time.time()
+                result = translator.translate(text)
+                elapsed = time.time() - t0
+                print(f"      [TRANSLATE] {source_lang}->{target_lang} | {len(text)} chars -> {len(result)} chars | {elapsed:.2f}s")
+                return result
+            else:
+                print(f"      [TRANSLATE] No translator available for {source_lang}->{target_lang}")
+        except Exception as e:
+            print(f"      [TRANSLATE] FAILED {source_lang}->{target_lang}: {e}")
         return text
 
     def translate_content(self, content: Dict[str, str], target_lang: str) -> Dict[str, str]:
         if target_lang == "en":
             return content
+        print(f"    [TRANSLATOR] Translating content dict ({len(content)} keys) to {target_lang}")
         translated = {}
         for key, value in content.items():
             if isinstance(value, str) and value:
@@ -247,6 +314,7 @@ class Translator:
                 translated[key] = [self.translate(v, target_lang) for v in value if isinstance(v, str)]
             else:
                 translated[key] = value
+        print(f"    [TRANSLATOR] Content translation complete: {len(translated)} keys translated")
         return translated
 
 
@@ -259,37 +327,52 @@ class ImageEnhancer:
     def enhance(image: Image.Image, brightness: float = 1.15,
                 contrast: float = 1.2, sharpness: float = 1.3,
                 color: float = 1.1) -> Image.Image:
+        print(f"    [ENHANCER] Manual enhancement: brightness={brightness}, contrast={contrast}, sharpness={sharpness}, color={color}")
+        print(f"    [ENHANCER] Input: {image.size} | Mode: {image.mode}")
         img = image.copy()
         img = ImageEnhance.Brightness(img).enhance(brightness)
         img = ImageEnhance.Contrast(img).enhance(contrast)
         img = ImageEnhance.Sharpness(img).enhance(sharpness)
         img = ImageEnhance.Color(img).enhance(color)
+        print(f"    [ENHANCER] Enhancement applied successfully")
         return img
 
     @staticmethod
     def auto_enhance(image: Image.Image) -> Image.Image:
         """Smart auto-enhancement based on image analysis."""
+        print(f"    [ENHANCER] Auto-enhancement starting...")
+        print(f"    [ENHANCER] Input: {image.size} | Mode: {image.mode}")
         img = image.copy().convert("RGB")
         arr = np.array(img).astype(float)
 
         mean_brightness = arr.mean() / 255.0
         std_val = arr.std() / 255.0
+        print(f"    [ENHANCER] Image analysis: mean_brightness={mean_brightness:.3f}, std_deviation={std_val:.3f}")
 
         brightness = 1.0
         if mean_brightness < 0.4:
             brightness = 1.3
+            print(f"    [ENHANCER] Image is dark (brightness={mean_brightness:.3f} < 0.4) -> boosting to {brightness}")
         elif mean_brightness > 0.7:
             brightness = 0.9
+            print(f"    [ENHANCER] Image is bright (brightness={mean_brightness:.3f} > 0.7) -> reducing to {brightness}")
+        else:
+            print(f"    [ENHANCER] Brightness OK ({mean_brightness:.3f}) -> no adjustment")
 
         contrast = 1.0
         if std_val < 0.15:
             contrast = 1.4
+            print(f"    [ENHANCER] Low contrast (std={std_val:.3f} < 0.15) -> boosting to {contrast}")
         elif std_val > 0.35:
             contrast = 0.95
+            print(f"    [ENHANCER] High contrast (std={std_val:.3f} > 0.35) -> reducing to {contrast}")
+        else:
+            print(f"    [ENHANCER] Contrast OK ({std_val:.3f}) -> no adjustment")
 
         img = ImageEnhance.Brightness(img).enhance(brightness)
         img = ImageEnhance.Contrast(img).enhance(contrast)
         img = ImageEnhance.Sharpness(img).enhance(1.25)
         img = ImageEnhance.Color(img).enhance(1.1)
+        print(f"    [ENHANCER] Final: brightness={brightness}, contrast={contrast}, sharpness=1.25, color=1.1")
 
         return img

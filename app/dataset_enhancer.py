@@ -64,46 +64,65 @@ class DatasetEnhancer:
         """Copy pamphlet into the brand's dataset folder, update FAISS.
         Returns dataset paths dict on success, None on failure. Never raises."""
         if not DATASET_ENHANCEMENT_ENABLED:
+            print(f"    [DATASET-ENH] Dataset enhancement DISABLED")
             return None
+
+        print(f"    [DATASET-ENH] Starting dataset enhancement...")
+        print(f"    [DATASET-ENH] Source: {pamphlet_path}")
+        print(f"    [DATASET-ENH] Brand: {brand} | Category: {category}/{subcategory}")
 
         try:
             ts = timestamp or datetime.now().strftime("%Y%m%d_%H%M%S")
 
             # Step 1 — save image into the brand's existing dataset folder
+            print(f"    [DATASET-ENH] Step 1: Copying to brand dataset folder...")
             dest_path, source_folder, is_new_folder = self._save_to_dataset(
                 pamphlet_path, brand, ts,
             )
             if dest_path is None:
+                print(f"    [DATASET-ENH] Step 1 FAILED: Could not save to dataset")
                 return None
+            print(f"    [DATASET-ENH] Step 1 OK: Saved to {dest_path}")
 
             # Step 2 — generate CLIP embedding
+            print(f"    [DATASET-ENH] Step 2: Generating CLIP embedding...")
+            print(f"    [DATASET-ENH] Model: openai/clip-vit-base-patch32 (vision encoder)")
             embedding = self._generate_embedding(dest_path)
             if embedding is None:
+                print(f"    [DATASET-ENH] Step 2 FAILED: Embedding generation failed")
+                print(f"    [DATASET-ENH] Image saved but not indexed")
                 return {
                     "image_path": str(dest_path),
                     "folder": str(dest_path.parent),
                     "new_folder_created": is_new_folder,
                 }
+            print(f"    [DATASET-ENH] Step 2 OK: Embedding shape={embedding.shape}")
 
             # Step 3 — update index + metadata (thread-safe)
+            print(f"    [DATASET-ENH] Step 3: Updating FAISS index (thread-safe)...")
             new_id = self._update_index(
                 embedding, dest_path, brand, category, subcategory,
                 source_folder, ts, query,
             )
+            print(f"    [DATASET-ENH] Step 3 OK: New vector ID={new_id} | Total vectors: {self.index.ntotal}")
 
             # Step 4 — append row to metadata CSV
+            print(f"    [DATASET-ENH] Step 4: Appending to metadata CSV...")
             self._append_to_csv(
                 dest_path, brand, category, subcategory, source_folder, ts,
             )
+            print(f"    [DATASET-ENH] Step 4 OK")
 
             # Step 5 — persist index to disk
+            print(f"    [DATASET-ENH] Step 5: Persisting FAISS index to disk...")
             self._persist_index()
+            print(f"    [DATASET-ENH] Step 5 OK: Index saved to {FAISS_DIR}")
 
             if is_new_folder:
-                print(f"  Dataset enhanced: Created new folder -> {dest_path.parent}")
+                print(f"    [DATASET-ENH] COMPLETE: Created NEW brand folder -> {dest_path.parent}")
             else:
-                print(f"  Dataset enhanced: Added to existing folder -> {dest_path.parent}")
-            print(f"    File: {dest_path.name}  |  Index ID: {new_id}  |  Brand: {brand}  |  Category: {category}/{subcategory}")
+                print(f"    [DATASET-ENH] COMPLETE: Added to EXISTING folder -> {dest_path.parent}")
+            print(f"    [DATASET-ENH] File: {dest_path.name} | ID: {new_id} | Brand: {brand} | {category}/{subcategory}")
             return {
                 "image_path": str(dest_path),
                 "folder": str(dest_path.parent),
@@ -115,7 +134,7 @@ class DatasetEnhancer:
             }
 
         except Exception as exc:
-            print(f"  [DatasetEnhancer] Non-blocking error: {exc}")
+            print(f"    [DATASET-ENH] Non-blocking ERROR: {type(exc).__name__}: {exc}")
             return None
 
     # ------------------------------------------------------------------
@@ -226,16 +245,26 @@ class DatasetEnhancer:
 
             # Update brand_matcher so the new image is retrievable by brand
             if brand and brand.lower() not in ("", "nan", "unknown"):
-                brand_lower = brand.lower().replace("_", "")
-                if brand in self.brand_matcher.brand_index:
+                canonical = brand.strip().lower().replace(" ", "_")
+                # Find existing display name for this canonical key
+                existing_name = self.brand_matcher._canonical_to_name.get(canonical)
+                if existing_name and existing_name in self.brand_matcher.brand_index:
+                    # Merge into existing brand (case-insensitive)
+                    self.brand_matcher.brand_index[existing_name]["indices"].append(new_id)
+                    self.brand_matcher.brand_index[existing_name]["count"] += 1
+                elif brand in self.brand_matcher.brand_index:
+                    # Exact match already exists
                     self.brand_matcher.brand_index[brand]["indices"].append(new_id)
                     self.brand_matcher.brand_index[brand]["count"] += 1
                 else:
+                    # Completely new brand
+                    brand_lower = canonical.replace("_", "")
                     self.brand_matcher.brand_names.append(brand)
                     self.brand_matcher.brand_names_lower.append(brand_lower)
                     self.brand_matcher.brand_names_with_spaces.append(
                         brand.lower().replace("_", " ")
                     )
+                    self.brand_matcher._canonical_to_name[canonical] = brand
                     self.brand_matcher.brand_index[brand] = {
                         "indices": [new_id],
                         "category": category,

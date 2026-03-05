@@ -12,7 +12,9 @@ from app.models import DB_DIR
 class Database:
     def __init__(self):
         self.db_path = DB_DIR / "adcraft.db"
+        print(f"    [DATABASE] Initializing SQLite database: {self.db_path}")
         self._init_db()
+        print(f"    [DATABASE] Tables ready: products, generated_content, clicks")
 
     def _init_db(self):
         conn = sqlite3.connect(str(self.db_path))
@@ -66,6 +68,7 @@ class Database:
                        brand: str = "", image_paths: list = None) -> str:
         product_id = str(uuid.uuid4())[:8]
         now = datetime.now().isoformat()
+        print(f"    [DB] Creating product: id={product_id} | name={name} | brand={brand} | category={category}")
         conn = self._conn()
         conn.execute(
             "INSERT INTO products VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -74,6 +77,7 @@ class Database:
         )
         conn.commit()
         conn.close()
+        print(f"    [DB] Product created: {product_id} | Images: {len(image_paths or [])}")
         return product_id
 
     def get_product(self, product_id: str) -> Optional[dict]:
@@ -111,6 +115,7 @@ class Database:
                                 product_image_path: str = None) -> str:
         content_id = str(uuid.uuid4())[:8]
         now = datetime.now().isoformat()
+        print(f"    [DB] Saving content: id={content_id} | product={product_id} | type={content_type} | lang={language}")
         conn = self._conn()
         conn.execute(
             "INSERT INTO generated_content VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -120,6 +125,7 @@ class Database:
         )
         conn.commit()
         conn.close()
+        print(f"    [DB] Content saved: {content_id}")
         return content_id
 
     def get_product_content(self, product_id: str) -> List[dict]:
@@ -138,6 +144,7 @@ class Database:
 
     def track_click(self, product_id: str, platform: str, source: str = ""):
         now = datetime.now().isoformat()
+        print(f"    [DB] Tracking click: product={product_id} | platform={platform} | source={source}")
         conn = self._conn()
         conn.execute(
             "INSERT INTO clicks (product_id, platform, source, clicked_at) VALUES (?, ?, ?, ?)",
