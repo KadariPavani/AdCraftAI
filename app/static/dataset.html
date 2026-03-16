@@ -37,6 +37,7 @@
         .lightbox img { max-width: 90vw; max-height: 85vh; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
         .new-badge { background: linear-gradient(135deg, #10b981, #059669); color: white; font-size: 10px; padding: 2px 8px; border-radius: 9999px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
         .gen-badge { background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; font-size: 10px; padding: 2px 8px; border-radius: 9999px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .images-gallery { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 8px; background: #f3f4f6; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen cat-colors">
@@ -294,79 +295,111 @@
 
     const FALLBACK_SVG = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect fill="#e5e7eb" width="100" height="100"/><text x="50" y="50" text-anchor="middle" dy=".3em" fill="#9ca3af" font-size="12">No img</text></svg>');
 
+    function buildBrandCard(b) {
+        const cats = Object.keys(b.categories);
+        const subcats = Object.keys(b.subcategories);
+        const isNew = b.generated_count > 0 && b.ad_types.generated === b.image_count;
+        const hasGenerated = b.generated_count > 0;
+        const displayName = b.brand.replace(/_/g, ' ');
+
+        const card = document.createElement('div');
+        card.className = 'brand-card bg-white rounded-2xl overflow-hidden shadow-sm card-hover fade-in';
+
+        // Scrollable image gallery — all images, newest first
+        const imagesDiv = document.createElement('div');
+        imagesDiv.className = 'images-gallery';
+
+        if (b.sample_images.length > 0) {
+            b.sample_images.forEach(url => {
+                const img = document.createElement('img');
+                img.className = 'img-thumb';
+                img.src = url;
+                img.loading = 'lazy';
+                img.onerror = function() { this.src = FALLBACK_SVG; };
+                img.onclick = function(e) { e.stopPropagation(); openLightbox(url); };
+                imagesDiv.appendChild(img);
+            });
+        } else {
+            imagesDiv.style.gridTemplateColumns = '1fr';
+            imagesDiv.innerHTML = '<div class="flex items-center justify-center text-gray-400 text-xs">No preview available</div>';
+        }
+        card.appendChild(imagesDiv);
+
+        // Build info section
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'p-4';
+        infoDiv.innerHTML = `
+            <div class="flex items-center justify-between mb-1">
+                <h3 class="font-bold text-gray-900 text-sm truncate flex-1">${displayName}</h3>
+                <div class="flex gap-1 ml-2">
+                    ${isNew ? '<span class="new-badge">New</span>' : ''}
+                    ${hasGenerated && !isNew ? '<span class="gen-badge">+AI</span>' : ''}
+                </div>
+            </div>
+            ${b.tagline ? `<p class="text-xs text-gray-400 italic mb-2 truncate">"${b.tagline}"</p>` : '<div class="mb-2"></div>'}
+            <div class="flex items-center justify-between text-xs text-gray-500 mb-3">
+                <span><strong class="text-gray-700">${b.image_count}</strong> images</span>
+                ${b.generated_count > 0 ? `<span class="text-indigo-500"><strong>${b.generated_count}</strong> generated</span>` : ''}
+            </div>
+            <div class="flex flex-wrap gap-1">
+                ${subcats.filter(s => s !== 'Unknown').slice(0, 3).map(s =>
+                    `<span class="tag bg-gray-100 text-gray-600">${s}</span>`
+                ).join('')}
+                ${subcats.filter(s => s !== 'Unknown').length > 3 ? `<span class="tag bg-gray-100 text-gray-400">+${subcats.length - 3}</span>` : ''}
+            </div>
+        `;
+
+        card.appendChild(infoDiv);
+        return card;
+    }
+
     function renderBrandsGrid(brands) {
         const grid = document.getElementById('brandsGrid');
         grid.innerHTML = '';
 
-        brands.forEach(b => {
-            const cats = Object.keys(b.categories);
-            const subcats = Object.keys(b.subcategories);
-            const mainCat = cats[0] || 'Unknown';
-            const isNew = b.generated_count > 0 && b.ad_types.generated === b.image_count;
-            const hasGenerated = b.generated_count > 0;
-            const displayName = b.brand.replace(/_/g, ' ');
-
-            const card = document.createElement('div');
-            card.className = 'brand-card bg-white rounded-2xl overflow-hidden shadow-sm card-hover fade-in';
-
-            // Build images row
-            const imagesDiv = document.createElement('div');
-            imagesDiv.className = 'grid gap-1 p-2 bg-gray-50';
-            imagesDiv.style.minHeight = '80px';
-            imagesDiv.style.gridTemplateColumns = `repeat(${Math.min(b.sample_images.length || 1, 4)}, 1fr)`;
-
-            if (b.sample_images.length > 0) {
-                b.sample_images.slice(0, 4).forEach(url => {
-                    const img = document.createElement('img');
-                    img.className = 'img-thumb';
-                    img.src = url;
-                    img.loading = 'lazy';
-                    img.onerror = function() { this.src = FALLBACK_SVG; };
-                    img.onclick = function(e) { e.stopPropagation(); openLightbox(url); };
-                    imagesDiv.appendChild(img);
-                });
-            } else {
-                imagesDiv.style.gridTemplateColumns = '1fr';
-                imagesDiv.innerHTML = '<div class="flex items-center justify-center text-gray-400 text-xs">No preview available</div>';
-            }
-
-            // Build info section
-            const infoDiv = document.createElement('div');
-            infoDiv.className = 'p-4';
-            infoDiv.innerHTML = `
-                <div class="flex items-center justify-between mb-1">
-                    <h3 class="font-bold text-gray-900 text-sm truncate flex-1">${displayName}</h3>
-                    <div class="flex gap-1 ml-2">
-                        ${isNew ? '<span class="new-badge">New</span>' : ''}
-                        ${hasGenerated && !isNew ? '<span class="gen-badge">+AI</span>' : ''}
-                    </div>
-                </div>
-                ${b.tagline ? `<p class="text-xs text-gray-400 italic mb-2 truncate">"${b.tagline}"</p>` : '<div class="mb-2"></div>'}
-                <div class="flex items-center justify-between text-xs text-gray-500 mb-3">
-                    <span><strong class="text-gray-700">${b.image_count}</strong> images</span>
-                    ${b.generated_count > 0 ? `<span class="text-indigo-500"><strong>${b.generated_count}</strong> generated</span>` : ''}
-                </div>
-                <div class="flex flex-wrap gap-1">
-                    ${cats.map(c => `<span class="tag text-white" style="background:${getCatColor(c)}">${c}</span>`).join('')}
-                </div>
-                ${subcats.filter(s => s !== 'Unknown').length > 0 ? `
-                    <div class="flex flex-wrap gap-1 mt-1">
-                        ${subcats.filter(s => s !== 'Unknown').slice(0, 3).map(s =>
-                            `<span class="tag bg-gray-100 text-gray-600">${s}</span>`
-                        ).join('')}
-                        ${subcats.filter(s => s !== 'Unknown').length > 3 ? `<span class="tag bg-gray-100 text-gray-400">+${subcats.length - 3}</span>` : ''}
-                    </div>
-                ` : ''}
-            `;
-
-            card.appendChild(imagesDiv);
-            card.appendChild(infoDiv);
-            grid.appendChild(card);
-        });
-
         if (brands.length === 0) {
             grid.innerHTML = '<div class="col-span-full text-center py-16"><p class="text-gray-400">No brands match your search</p></div>';
+            return;
         }
+
+        // Group brands by their primary category
+        const grouped = {};
+        brands.forEach(b => {
+            const cats = Object.keys(b.categories);
+            const mainCat = cats[0] || 'Unknown';
+            if (!grouped[mainCat]) grouped[mainCat] = [];
+            grouped[mainCat].push(b);
+        });
+
+        // Sort categories by total image count descending
+        const sortedCats = Object.keys(grouped).sort((a, b) => {
+            const sumA = grouped[a].reduce((s, br) => s + br.image_count, 0);
+            const sumB = grouped[b].reduce((s, br) => s + br.image_count, 0);
+            return sumB - sumA;
+        });
+
+        // Render each category section
+        sortedCats.forEach(cat => {
+            const catBrands = grouped[cat];
+            const catTotal = catBrands.reduce((s, br) => s + br.image_count, 0);
+            const color = getCatColor(cat);
+
+            // Category header
+            const header = document.createElement('div');
+            header.className = 'col-span-full flex items-center gap-3 mt-6 mb-2 first:mt-0';
+            header.innerHTML = `
+                <div class="w-4 h-4 rounded-full flex-shrink-0" style="background:${color}"></div>
+                <h2 class="font-bold text-gray-800 text-lg">${cat}</h2>
+                <span class="text-sm text-gray-400">${catBrands.length} brand${catBrands.length > 1 ? 's' : ''} &middot; ${catTotal.toLocaleString()} images</span>
+                <div class="flex-1 h-px bg-gray-200"></div>
+            `;
+            grid.appendChild(header);
+
+            // Brand cards for this category
+            catBrands.forEach(b => {
+                grid.appendChild(buildBrandCard(b));
+            });
+        });
     }
 
     function renderNewBrands() {
@@ -389,13 +422,12 @@
             const card = document.createElement('div');
             card.className = 'bg-white rounded-2xl overflow-hidden shadow-sm card-hover fade-in border-2 border-emerald-200';
 
-            // Images
+            // Images — all, newest first, scrollable
             const imgsDiv = document.createElement('div');
-            imgsDiv.className = 'grid gap-1 p-2 bg-emerald-50';
-            imgsDiv.style.minHeight = '100px';
-            imgsDiv.style.gridTemplateColumns = `repeat(${Math.min(b.sample_images.length || 1, 4)}, 1fr)`;
+            imgsDiv.className = 'images-gallery';
+            imgsDiv.style.background = '#ecfdf5';
             if (b.sample_images.length > 0) {
-                b.sample_images.slice(0, 4).forEach(url => {
+                b.sample_images.forEach(url => {
                     const img = document.createElement('img');
                     img.className = 'img-thumb';
                     img.src = url;

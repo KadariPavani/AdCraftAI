@@ -22,6 +22,7 @@ from PIL import Image
 from app.pipeline import (
     AdCraftPipeline, SUPPORTED_LANGUAGES, OUTPUT_DIR, UPLOAD_DIR
 )
+from app.smart_prompt import SmartPromptParser, CATEGORY_FIELDS
 
 # ---------------------------------------------------------------------------
 # App Setup
@@ -50,12 +51,25 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 # Lazy pipeline loading
 _pipeline = None
+_smart_parser = None
 
 def get_pipeline() -> AdCraftPipeline:
     global _pipeline
     if _pipeline is None:
         _pipeline = AdCraftPipeline()
     return _pipeline
+
+def get_smart_parser() -> SmartPromptParser:
+    global _smart_parser
+    if _smart_parser is None:
+        _smart_parser = SmartPromptParser()
+    # Connect to pipeline if available (for brand/dataset awareness)
+    try:
+        pipeline = get_pipeline()
+        _smart_parser.set_pipeline(pipeline)
+    except Exception:
+        pass  # Pipeline not ready yet, parser works without it
+    return _smart_parser
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +198,7 @@ async def dataset_summary():
     import math
     from collections import Counter, defaultdict
     from urllib.parse import quote
-    from app.brands import BRAND_TAGLINES
+    from app.brands import BRAND_TAGLINES, BrandMatcher
 
     print(f"\n[API] GET /api/dataset-summary")
     pipeline = get_pipeline()
@@ -219,7 +233,8 @@ async def dataset_summary():
     })
 
     for _idx, meta in pipeline.id_to_metadata.items():
-        brand = _clean(meta.get("brand"), "Unknown")
+        brand_raw = _clean(meta.get("brand"), "Unknown")
+        brand = BrandMatcher.normalize_brand(brand_raw) if brand_raw != "Unknown" else "Unknown"
         category = _clean(meta.get("category"), "Unknown")
         subcategory = _clean(meta.get("subcategory"), "Unknown")
         language = _clean(meta.get("language"), "unknown")
@@ -241,22 +256,35 @@ async def dataset_summary():
         bd["languages"][language] += 1
         if ad_type == "generated":
             bd["generated_count"] += 1
-        # Collect up to 4 sample images per brand (URL-encode path for & etc.)
+        # Collect ALL images per brand with timestamp for sorting
         img_path = meta.get("image_path", "")
-        if img_path and len(bd["sample_images"]) < 4:
-            if isinstance(img_path, str) and img_path.strip():
-                encoded = quote(img_path, safe="/\\:")
-                bd["sample_images"].append(f"/file?path={encoded}")
+        if img_path and isinstance(img_path, str) and img_path.strip():
+            encoded = quote(img_path, safe="/\\:")
+            ts = meta.get("timestamp", "")
+            bd["sample_images"].append({
+                "url": f"/file?path={encoded}",
+                "timestamp": ts,
+                "ad_type": ad_type,
+            })
 
     # Track unlabeled count, then remove from brand list
     unlabeled_count = brand_counter.get("Unknown", 0)
     brand_detail.pop("Unknown", None)
     brand_counter.pop("Unknown", None)
 
+    # Case-insensitive tagline lookup
+    tagline_lookup = {k.lower(): v for k, v in BRAND_TAGLINES.items()}
+
     # ── Build per-brand list sorted by image count ──
     brands_list = []
     for brand_name in sorted(brand_detail, key=lambda b: brand_detail[b]["image_count"], reverse=True):
         bd = brand_detail[brand_name]
+        # Sort newest first, keep only 8 for fast loading
+        sorted_images = sorted(
+            bd["sample_images"],
+            key=lambda x: x.get("timestamp", ""),
+            reverse=True,
+        )
         brands_list.append({
             "brand": brand_name,
             "image_count": bd["image_count"],
@@ -264,8 +292,8 @@ async def dataset_summary():
             "categories": dict(bd["categories"].most_common()),
             "subcategories": dict(bd["subcategories"].most_common()),
             "ad_types": dict(bd["ad_types"].most_common()),
-            "tagline": BRAND_TAGLINES.get(brand_name, ""),
-            "sample_images": bd["sample_images"],
+            "tagline": tagline_lookup.get(brand_name.lower(), ""),
+            "sample_images": [img["url"] for img in sorted_images[:8]],
         })
 
     # ── Newly generated brands (only have generated images) ──
@@ -275,7 +303,7 @@ async def dataset_summary():
     ]
 
     # ── Category → subcategory tree ──
-    cat_subcat_tree = defaultdict(lambda: Counter())
+    cat_subcat_tree = defaultdict(Counter)
     for _idx, meta in pipeline.id_to_metadata.items():
         cat = _clean(meta.get("category"), "Unknown")
         sub = _clean(meta.get("subcategory"), "Unknown")
@@ -325,6 +353,85 @@ async def dataset_summary():
 
 
 # ---------------------------------------------------------------------------
+# Smart Prompt — Parse & Validate Product Data
+# ---------------------------------------------------------------------------
+
+@app.get("/api/category-fields")
+async def get_category_fields(category: str = Query("general")):
+    """Get required and optional fields for a product category."""
+    print(f"\n[API] GET /api/category-fields?category={category}")
+    parser = get_smart_parser()
+    fields = parser.get_category_fields(category)
+    return JSONResponse(content=fields)
+
+
+@app.get("/api/categories")
+async def list_categories():
+    """List all supported product categories with their required fields."""
+    print(f"\n[API] GET /api/categories")
+    cats = {}
+    for key, val in CATEGORY_FIELDS.items():
+        cats[key] = {
+            "display_name": val["display_name"],
+            "required_count": len(val["required"]),
+            "required_fields": list(val["required"].keys()),
+        }
+    return JSONResponse(content={"categories": cats})
+
+
+@app.post("/api/parse-prompt")
+async def parse_prompt(prompt: str = Form(...)):
+    """Parse a free-text product prompt into structured catalog data.
+
+    Uses AI to extract product details (brand, name, type, size, material, etc.)
+    and identifies which required fields are missing based on the detected category.
+
+    Returns extracted fields, missing required fields, and completeness score.
+    """
+    import time as _time
+    t0 = _time.time()
+    print(f"\n{'#' * 70}")
+    print(f"[API] POST /api/parse-prompt")
+    print(f"[API] Prompt: \"{prompt[:200]}\"")
+    print(f"{'#' * 70}")
+
+    parser = get_smart_parser()
+    result = parser.parse_prompt(prompt)
+
+    elapsed = _time.time() - t0
+    print(f"[API] Parse complete in {elapsed:.2f}s | Category: {result['category']} | "
+          f"Completeness: {result['completeness']:.0%} | "
+          f"Missing: {list(result['missing_required'].keys())}")
+
+    return JSONResponse(content=result)
+
+
+@app.post("/api/validate-fields")
+async def validate_fields(
+    parsed_data: str = Form(...),
+    additional_fields: str = Form("{}"),
+):
+    """Validate and merge additional fields into previously parsed data.
+
+    - parsed_data: JSON string of previously parsed prompt data
+    - additional_fields: JSON string of new field values to merge
+    """
+    print(f"\n[API] POST /api/validate-fields")
+    try:
+        parsed = json.loads(parsed_data)
+        additional = json.loads(additional_fields)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+
+    parser = get_smart_parser()
+    result = parser.merge_fields(parsed, additional)
+
+    print(f"[API] Validation complete | Completeness: {result['completeness']:.0%} | "
+          f"Missing: {list(result['missing_required'].keys())}")
+    return JSONResponse(content=result)
+
+
+# ---------------------------------------------------------------------------
 # Generate Ad Creative
 # ---------------------------------------------------------------------------
 
@@ -334,6 +441,7 @@ async def generate_ad(
     languages: str = Form("en"),
     brand: str = Form(""),
     image: Optional[UploadFile] = File(None),
+    product_metadata: str = Form(""),
 ):
     """Generate ad creative from text prompt and optional image.
 
@@ -341,6 +449,7 @@ async def generate_ad(
     - languages: Comma-separated language codes (e.g., "en,hi,ta,bn")
     - brand: Brand name for logo fetching (e.g., "Nike", "Samsung")
     - image: Optional product image upload
+    - product_metadata: JSON string of structured product data from Smart Prompt
     """
     import time as _time
     api_start = _time.time()
@@ -350,9 +459,33 @@ async def generate_ad(
     print(f"[API] Languages: {languages}")
     print(f"[API] Brand: {brand or 'auto-detect'}")
     print(f"[API] Image uploaded: {image.filename if image and image.filename else 'None'}")
+    print(f"[API] Product metadata: {'YES' if product_metadata else 'NO'}")
     print(f"{'#' * 70}")
 
     pipeline = get_pipeline()
+
+    # Parse product metadata if provided (from Smart Prompt)
+    metadata = {}
+    if product_metadata:
+        try:
+            metadata = json.loads(product_metadata)
+            print(f"[API] Parsed product metadata: {list(metadata.keys())}")
+            # Use brand from metadata if not explicitly provided
+            if not brand.strip() and metadata.get("brand"):
+                brand = metadata["brand"]
+                print(f"[API] Brand from metadata: {brand}")
+            # Enrich prompt with metadata
+            if metadata.get("rich_prompt"):
+                prompt = metadata["rich_prompt"]
+                print(f"[API] Using enriched prompt from metadata")
+        except json.JSONDecodeError:
+            print(f"[API] WARNING: Invalid product_metadata JSON, ignoring")
+
+    # Normalize brand name to prevent case-variant duplicates
+    if brand.strip():
+        from app.brands import BrandMatcher as _BM
+        brand = _BM.normalize_brand(brand)
+        print(f"[API] Normalized brand: {brand}")
 
     # Parse languages
     lang_list = [l.strip() for l in languages.split(",") if l.strip()]

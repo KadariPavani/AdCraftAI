@@ -97,12 +97,22 @@ class BrandMatcher:
 
     @staticmethod
     def _canonical(name: str) -> str:
-        """Normalize brand name: keep original casing of the first occurrence
-        but use a lowercase key for grouping so 'DOMS' and 'Doms' merge."""
+        """Normalize brand name: lowercase key for grouping so 'DOMS' and 'Doms' merge."""
         return name.strip().lower().replace(" ", "_")
 
+    @staticmethod
+    def normalize_brand(name: str) -> str:
+        """Produce a canonical display name: Title_Case with underscores.
+        Used everywhere a brand string is stored (CSV, folder, metadata)."""
+        if not name or not isinstance(name, str):
+            return name or ""
+        # Strip, collapse whitespace, replace spaces with underscores
+        clean = "_".join(name.strip().split())
+        # Title-case each segment: "kalyan_jewellers" -> "Kalyan_Jewellers"
+        return "_".join(w.capitalize() for w in clean.split("_"))
+
     def __init__(self, id_to_metadata: Dict[int, dict]):
-        # Group by canonical (lowercased) key; keep the first-seen casing as display name
+        # Group by canonical (lowercased) key; normalize display name
         brand_data: Dict[str, Dict] = defaultdict(
             lambda: {"indices": [], "categories": Counter(), "subcategories": Counter(), "display_name": ""}
         )
@@ -114,7 +124,8 @@ class BrandMatcher:
             if brand and brand.lower() not in ("", "nan", "unknown"):
                 key = self._canonical(brand)
                 if not brand_data[key]["display_name"]:
-                    brand_data[key]["display_name"] = brand  # keep first-seen casing
+                    # Normalize to Title_Case for consistent display
+                    brand_data[key]["display_name"] = self.normalize_brand(brand)
                 brand_data[key]["indices"].append(idx)
                 brand_data[key]["categories"][meta.get("category", "")] += 1
                 brand_data[key]["subcategories"][meta.get("subcategory", "")] += 1

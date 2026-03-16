@@ -319,11 +319,12 @@ class AdCraftPipeline:
             t0 = time.time()
             # Use user-specified brand if provided, otherwise auto-detect
             if brand_override:
-                brand = brand_override.replace(" ", "_")
-                print(f"  [CONTENT] Using brand override: {brand}")
+                brand = BrandMatcher.normalize_brand(brand_override)
+                print(f"  [CONTENT] Using brand override (normalized): {brand}")
             else:
-                brand = brand_match.matched_brand or (retrieved_ads[0].brand if retrieved_ads else "Product")
-                print(f"  [CONTENT] Auto-detected brand: {brand}")
+                raw_brand = brand_match.matched_brand or (retrieved_ads[0].brand if retrieved_ads else "Product")
+                brand = BrandMatcher.normalize_brand(raw_brand)
+                print(f"  [CONTENT] Auto-detected brand (normalized): {brand}")
 
             if brand_match.category:
                 # Brand was found in the dataset — use its known category

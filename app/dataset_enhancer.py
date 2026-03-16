@@ -17,6 +17,7 @@ import torch.nn.functional as F
 from PIL import Image
 
 from app.models import BASE_DIR, FAISS_DIR
+from app.brands import BrandMatcher
 
 # ---------------------------------------------------------------------------
 # Config
@@ -66,6 +67,12 @@ class DatasetEnhancer:
         if not DATASET_ENHANCEMENT_ENABLED:
             print(f"    [DATASET-ENH] Dataset enhancement DISABLED")
             return None
+
+        # Normalize brand to Title_Case (prevents duplicate folders)
+        original_brand = brand
+        brand = BrandMatcher.normalize_brand(brand)
+        if original_brand != brand:
+            print(f"    [DATASET-ENH] Brand normalized: \"{original_brand}\" -> \"{brand}\"")
 
         print(f"    [DATASET-ENH] Starting dataset enhancement...")
         print(f"    [DATASET-ENH] Source: {pamphlet_path}")
@@ -140,11 +147,25 @@ class DatasetEnhancer:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    def _resolve_brand_name(self, brand: str) -> str:
+        """Resolve a brand name to its canonical display name in the index.
+        Handles case variations like 'kalyan jewellers' -> 'Kalyan_Jewellers'."""
+        # Direct match
+        if brand in self.brand_matcher.brand_index:
+            return brand
+        # Canonical lookup
+        canonical = BrandMatcher._canonical(brand)
+        existing = self.brand_matcher._canonical_to_name.get(canonical)
+        if existing and existing in self.brand_matcher.brand_index:
+            return existing
+        return brand
+
     def _find_brand_folder(self, brand: str) -> Optional[Path]:
         """Look up an existing image for this brand in id_to_metadata and
         return its parent directory so we can place new images alongside it."""
-        if brand in self.brand_matcher.brand_index:
-            indices = self.brand_matcher.brand_index[brand]["indices"]
+        resolved = self._resolve_brand_name(brand)
+        if resolved in self.brand_matcher.brand_index:
+            indices = self.brand_matcher.brand_index[resolved]["indices"]
             for idx in indices:
                 meta = self.id_to_metadata.get(idx)
                 if meta:
@@ -158,8 +179,9 @@ class DatasetEnhancer:
 
     def _get_source_folder(self, brand: str) -> str:
         """Return the source_folder value from an existing entry for this brand."""
-        if brand in self.brand_matcher.brand_index:
-            indices = self.brand_matcher.brand_index[brand]["indices"]
+        resolved = self._resolve_brand_name(brand)
+        if resolved in self.brand_matcher.brand_index:
+            indices = self.brand_matcher.brand_index[resolved]["indices"]
             for idx in indices:
                 meta = self.id_to_metadata.get(idx)
                 if meta and meta.get("source_folder"):
@@ -175,7 +197,8 @@ class DatasetEnhancer:
         if not src.exists():
             return None, None, None
 
-        safe_brand = brand.replace(" ", "_")
+        # Always use normalized Title_Case brand for consistent folder names
+        safe_brand = BrandMatcher.normalize_brand(brand)
 
         # Try to find the brand's existing folder in the dataset
         dest_dir = self._find_brand_folder(brand)
@@ -222,6 +245,8 @@ class DatasetEnhancer:
         query: str,
     ) -> int:
         """Add vector to FAISS and update id_to_metadata + brand_matcher (thread-safe)."""
+        # Ensure brand is normalized before storing
+        brand = BrandMatcher.normalize_brand(brand)
         with self._lock:
             new_id = self.index.ntotal
             self.index.add(np.array([embedding]))
@@ -281,6 +306,8 @@ class DatasetEnhancer:
         """Append a row to the metadata CSV, matching existing column format."""
         if not METADATA_CSV.exists():
             return
+        # Normalize brand for consistent CSV entries
+        brand = BrandMatcher.normalize_brand(brand)
         row = {
             "source": "adgal",
             "source_folder": source_folder,
