@@ -54,11 +54,11 @@ SUPPORTED_LANGUAGES = {
 }
 
 DEFAULT_NEGATIVE_PROMPT = (
-    "text, words, letters, numbers, typography, watermark, logo, label, stamp, "
     "blurry, low quality, pixelated, distorted, deformed, ugly, oversaturated, "
     "extra fingers, extra limbs, disfigured face, bad anatomy, bad proportions, "
     "poorly drawn hands, poorly drawn face, mutation, amateur, clip art, cartoon, "
-    "frame, border, collage, split image, multiple views"
+    "frame, border, collage, split image, multiple views, "
+    "misspelled text, garbled letters, illegible text, wrong spelling"
 )
 
 # ---------------------------------------------------------------------------

@@ -500,30 +500,87 @@ class SmartPromptParser:
         return aliases.get(cat, "general")
 
     def _build_rich_prompt(self, original_prompt: str, extracted: Dict, category: str) -> str:
-        """Build an enriched prompt combining original text with extracted structured data."""
-        parts = []
+        """Use LLM to build a comprehensive ad image generation prompt.
 
-        # Start with key identifiers
+        The prompt instructs the image model to render a complete advertisement
+        with ALL visual elements (headline, CTA button, tagline, features, price,
+        brand name) baked directly into the generated image.
+        """
+        # Gather all product details for the LLM
+        product_info_parts = []
         if extracted.get("brand"):
-            parts.append(f"{extracted['brand']}")
+            product_info_parts.append(f"Brand: {extracted['brand']}")
         if extracted.get("product_name"):
-            parts.append(f"{extracted['product_name']}")
+            product_info_parts.append(f"Product: {extracted['product_name']}")
         if extracted.get("product_type"):
-            parts.append(f"{extracted['product_type']}")
+            product_info_parts.append(f"Type: {extracted['product_type']}")
 
-        # Add descriptive details
         detail_fields = ["material", "color", "key_features", "target_audience",
-                         "occasion", "pack_size", "size_range", "flavor"]
+                         "occasion", "pack_size", "size_range", "flavor", "price"]
+        for field in detail_fields:
+            val = extracted.get(field, "")
+            if val:
+                product_info_parts.append(f"{field.replace('_', ' ').title()}: {val}")
+
+        if extracted.get("scene_description"):
+            product_info_parts.append(f"Scene: {extracted['scene_description']}")
+
+        product_info = "\n".join(product_info_parts)
+
+        # Use LLM to craft a rich image generation prompt
+        try:
+            system_prompt = (
+                "You are an expert at writing image generation prompts for creating complete advertisement images. "
+                "Given product details, write a SINGLE detailed prompt that will generate a COMPLETE, READY-TO-USE "
+                "advertisement image. The generated image MUST include ALL of the following elements rendered "
+                "as part of the image itself (not as overlays):\n\n"
+                "1. The product shown prominently (photorealistic or stylized based on category)\n"
+                "2. A bold, catchy HEADLINE text rendered clearly in the image\n"
+                "3. A CTA button (e.g., 'Shop Now', 'Buy Now', 'Order Today') with visible button shape\n"
+                "4. Brand name displayed prominently\n"
+                "5. Key selling points or features as text in the image\n"
+                "6. Price if provided\n"
+                "7. Professional ad layout with proper typography, colors, and composition\n\n"
+                "The prompt should describe a polished, professional advertisement poster/banner that looks "
+                "like it was designed by a professional graphic designer. Include specific details about:\n"
+                "- Layout and composition\n"
+                "- Typography style (bold, modern, elegant, etc.)\n"
+                "- Color scheme\n"
+                "- Visual hierarchy\n"
+                "- Background style\n\n"
+                "Output ONLY the image generation prompt, nothing else. Make it 3-5 sentences."
+            )
+
+            user_prompt = (
+                f"Create an image generation prompt for this product ad:\n\n"
+                f"{product_info}\n\n"
+                f"Original user request: {original_prompt}\n\n"
+                f"Write the prompt to generate a COMPLETE advertisement image with all text, "
+                f"buttons, and visual elements included in the image."
+            )
+
+            result = self.text_gen.generate(system_prompt, user_prompt)
+            if result and len(result) > 50:
+                print(f"    [SMART-PROMPT] LLM-enhanced rich prompt generated ({len(result)} chars)")
+                return result.strip()
+        except Exception as e:
+            print(f"    [SMART-PROMPT] LLM rich prompt generation failed: {e}, using structured fallback")
+
+        # Fallback: structured prompt with all details
+        parts = []
+        if extracted.get("brand"):
+            parts.append(extracted['brand'])
+        if extracted.get("product_name"):
+            parts.append(extracted['product_name'])
+        if extracted.get("product_type"):
+            parts.append(extracted['product_type'])
         for field in detail_fields:
             val = extracted.get(field, "")
             if val:
                 parts.append(f"{field.replace('_', ' ')}: {val}")
-
-        # Add scene description if present
         if extracted.get("scene_description"):
             parts.append(extracted["scene_description"])
 
-        # Add any parts from original prompt not covered
         if parts:
             return f"{' | '.join(parts)}. {original_prompt}"
         return original_prompt

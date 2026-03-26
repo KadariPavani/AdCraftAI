@@ -361,59 +361,97 @@ class AdCraftPipeline:
                     print(f"  [CONTENT] AI category inference failed ({e}), using generic")
             print(f"  [CONTENT] Final category: {category} / Subcategory: {subcategory}")
 
-            # CLIP-based diffusion prompt (for image generation only)
-            print(f"\n  [CLIP] Generating diffusion prompt via CLIP content extraction...")
-            print(f"  [CLIP] Model: openai/clip-vit-base-patch32 (vision+text)")
-            print(f"  [CLIP] Ranking styles/moods/subjects against {len(ad_image_paths)} reference images")
-            diffusion_prompt = self.clip_content_extractor.generate_diffusion_prompt(
-                ad_image_paths, brand, category, subcategory, user_query=query
-            )
-            print(f"  [CLIP] Base prompt: {diffusion_prompt[:100]}...")
-
-            # Try AI-enhanced diffusion prompt
-            print(f"\n  [AI-PROMPT] Enhancing image prompt via Pollinations AI...")
+            # Build a comprehensive ad image prompt using LLM
+            # The prompt instructs the image model to render ALL ad elements
+            # (headline, CTA button, tagline, features, brand, price) directly into the image
+            print(f"\n  [AI-PROMPT] Building complete ad image prompt via LLM...")
             print(f"  [AI-PROMPT] Model: openai (via Pollinations text API)")
-            print(f"  [AI-PROMPT] URL: {self.text_gen.URL}")
+            print(f"  [AI-PROMPT] Goal: Generate COMPLETE ad with all text/buttons/CTAs in the image")
+            brand_clean = brand.replace("_", " ")
+
+            # First generate the ad copy so we can include it in the image prompt
+            print(f"\n  [TEXT-GEN-PRE] Pre-generating ad copy for image prompt inclusion...")
+            pre_text_content = self.content_gen.generate_product_content(
+                brand, category, subcategory, [], "", query
+            )
+            pre_headline = pre_text_content.get("headline", "") or brand_clean
+            pre_tagline = pre_text_content.get("tagline", "")
+            pre_cta = pre_text_content.get("cta_text", "") or "SHOP NOW"
+            pre_features = pre_text_content.get("features", [])[:3]
+            print(f"  [TEXT-GEN-PRE] Pre-headline: \"{pre_headline}\"")
+            print(f"  [TEXT-GEN-PRE] Pre-CTA: \"{pre_cta}\"")
+
+            # Extract price from query if present
+            import re as _re
+            price_match = _re.search(r'(?:rs\.?|inr|usd|\$|₹|price[:\s]+)\s*[\d,]+(?:\.\d{2})?', query, _re.I)
+            price_text = price_match.group().strip() if price_match else ""
+
             try:
-                brand_clean = brand.replace("_", " ")
                 ai_prompt = self.text_gen.generate(
                     system_prompt=(
-                        "You are an expert advertising photographer prompt writer. "
-                        "Given a brand and product description, write a single detailed "
-                        "image generation prompt (2-3 sentences) describing a photorealistic "
-                        "advertisement photo. Include specific details about the scene, "
-                        "models, lighting, colors, setting, and mood. "
-                        "Output ONLY the prompt text, nothing else."
+                        "You are an expert at writing image generation prompts for creating COMPLETE, "
+                        "READY-TO-USE advertisement images. Your prompt must instruct the AI image model "
+                        "to render a FINISHED advertisement with ALL visual elements baked into the image.\n\n"
+                        "The generated image MUST include these elements as part of the image itself:\n"
+                        "1. The product shown prominently\n"
+                        "2. The EXACT headline text rendered in bold typography\n"
+                        "3. A visible CTA button with the EXACT button text\n"
+                        "4. The brand name displayed prominently\n"
+                        "5. Key features/selling points as text in the image\n"
+                        "6. Price displayed if provided\n"
+                        "7. Tagline text if provided\n"
+                        "8. Professional ad layout, typography, colors, and composition\n\n"
+                        "CRITICAL: Include the EXACT text strings that must appear in the image. "
+                        "Describe the layout, typography style, color scheme, and visual hierarchy. "
+                        "The result should look like a polished graphic-designed advertisement poster.\n\n"
+                        "Output ONLY the image generation prompt (4-6 sentences), nothing else."
                     ),
                     user_prompt=(
                         f"Brand: {brand_clean}\n"
                         f"Category: {category}\n"
-                        f"User request: {query}\n"
-                        f"Write a detailed photorealistic image prompt for this ad:"
+                        f"Product: {subcategory.replace('_', ' ') if subcategory else category.replace('_', ' ')}\n"
+                        f"User request: {query}\n\n"
+                        f"EXACT text to include in the image:\n"
+                        f"- Headline: \"{pre_headline}\"\n"
+                        f"- CTA Button: \"{pre_cta}\"\n"
+                        f"- Brand: \"{brand_clean}\"\n"
+                        f"- Tagline: \"{pre_tagline}\"\n"
+                        + (f"- Price: \"{price_text}\"\n" if price_text else "")
+                        + (f"- Features: {', '.join(pre_features)}\n" if pre_features else "")
+                        + f"\nGenerate a prompt for a COMPLETE advertisement image with ALL these elements."
                     ),
                 )
-                if ai_prompt and len(ai_prompt) > 30:
+                if ai_prompt and len(ai_prompt) > 50:
                     diffusion_prompt = (
                         f"{ai_prompt.strip()}, "
-                        f"ultra realistic, photorealistic, 8k, sharp focus, "
-                        f"professional commercial advertisement photography"
+                        f"professional advertisement design, graphic design, "
+                        f"clean typography, sharp text rendering, 8k, high quality, "
+                        f"commercial ad poster, polished layout"
                     )
-                    print(f"  [AI-PROMPT] SUCCESS - AI-enhanced prompt generated ({len(diffusion_prompt)} chars)")
-                    print(f"  [AI-PROMPT] Prompt: {diffusion_prompt[:120]}...")
+                    print(f"  [AI-PROMPT] SUCCESS - Complete ad prompt generated ({len(diffusion_prompt)} chars)")
+                    print(f"  [AI-PROMPT] Prompt: {diffusion_prompt[:150]}...")
                 else:
-                    print(f"  [AI-PROMPT] FALLBACK - AI response too short ({len(ai_prompt) if ai_prompt else 0} chars), using CLIP prompt")
+                    raise ValueError(f"AI response too short ({len(ai_prompt) if ai_prompt else 0} chars)")
             except Exception as e:
-                print(f"  [AI-PROMPT] FALLBACK - AI prompt enhancement failed: {e}")
-                print(f"  [AI-PROMPT] Using CLIP-generated prompt instead")
+                print(f"  [AI-PROMPT] LLM prompt failed: {e}, using structured fallback")
+                # Structured fallback that explicitly includes all ad elements
+                features_text = ", ".join(pre_features) if pre_features else ""
+                diffusion_prompt = (
+                    f"Professional advertisement poster for {brand_clean} {subcategory or category}. "
+                    f"Bold headline text reading \"{pre_headline}\" at the top. "
+                    f"Product shown prominently in the center. "
+                    f"Brand name \"{brand_clean}\" displayed clearly. "
+                    + (f"Tagline \"{pre_tagline}\" below the headline. " if pre_tagline else "")
+                    + (f"Price \"{price_text}\" shown prominently. " if price_text else "")
+                    + (f"Key features: {features_text}. " if features_text else "")
+                    + f"A bold CTA button reading \"{pre_cta}\" at the bottom. "
+                    f"Professional graphic design, clean modern typography, vibrant colors, "
+                    f"polished commercial ad layout, 8k quality, sharp text rendering."
+                )
 
-            # Generate ALL ad text via AI (headline, tagline, features, CTA, etc.)
-            print(f"\n  [TEXT-GEN] Generating ALL ad copy via Pollinations AI...")
-            print(f"  [TEXT-GEN] Model: openai (via Pollinations)")
-            print(f"  [TEXT-GEN] Mode: JSON (structured output)")
-            print(f"  [TEXT-GEN] Input: brand={brand}, category={category}, query=\"{query}\"")
-            text_content = self.content_gen.generate_product_content(
-                brand, category, subcategory, [], "", query
-            )
+            # Reuse the pre-generated text content (already generated above for the image prompt)
+            print(f"\n  [TEXT-GEN] Using pre-generated ad copy (already created for image prompt)...")
+            text_content = pre_text_content
 
             # Extract AI-generated fields
             headline = text_content.get("headline", "") or brand.replace("_", " ")
@@ -502,20 +540,20 @@ class AdCraftPipeline:
                 result.image_generator_used = "uploaded"
                 print(f"  [IMAGE] Enhanced size: {product_img.size}")
             else:
-                print(f"  [IMAGE] Starting image generation (Primary: HF FLUX.1-schnell | Fallback: gradient):")
-                print(f"  [IMAGE] Target size: 1024x768")
+                print(f"  [IMAGE] Starting COMPLETE AD image generation (all text/buttons/CTAs in image):")
+                print(f"  [IMAGE] Target size: 1080x1080 (final ad size)")
                 print(f"  [IMAGE] Prompt length: {len(diffusion_prompt)} chars")
                 product_img, method = self.image_gen.generate(
                     prompt=diffusion_prompt,
                     negative_prompt=DEFAULT_NEGATIVE_PROMPT,
-                    width=1024,
-                    height=768,
+                    width=1080,
+                    height=1080,
                 )
 
                 # Use brand colors for gradient fallback
                 if method == "gradient_fallback" and colors:
                     print(f"  [IMAGE] Applying brand colors to gradient: {colors[:2]}")
-                    product_img = self.image_gen._make_gradient(1024, 768, colors)
+                    product_img = self.image_gen._make_gradient(1080, 1080, colors)
 
                 result.image_generator_used = method
                 print(f"  [IMAGE] RESULT: Generated via -> {method}")
@@ -587,76 +625,34 @@ class AdCraftPipeline:
             print(f"  [TRANS] Time: {result.stage_timings['translations']:.3f}s")
 
             # ── Stage 6: Ad Composition ──────────────────────────────
+            # The AI-generated image IS the complete ad (all text, buttons, CTAs
+            # are already rendered in the image by the image model).
+            # No PIL overlay composition needed — use the image directly.
             print("\n" + "-" * 70)
-            print("  STAGE 6: Ad Composition (Pamphlet Design)")
+            print("  STAGE 6: Ad Composition (AI-Generated Complete Ad)")
             print("-" * 70)
             t0 = time.time()
-            # Determine the primary display language (first non-en if available, else en)
-            primary_lang = "en"
-            for lang in languages:
-                if lang != "en" and lang in result.translations:
-                    primary_lang = lang
-                    break
-            print(f"  [DESIGN] Primary display language: {primary_lang} ({SUPPORTED_LANGUAGES.get(primary_lang, primary_lang)})")
-            print(f"  [DESIGN] Bilingual mode: {'YES (English secondary)' if primary_lang != 'en' and 'en' in languages else 'NO (single language)'}")
-            print(f"  [DESIGN] Designer: ProAdDesigner (6 theme templates)")
-            print(f"  [DESIGN] Canvas size: 1080x1080")
+            print(f"  [DESIGN] Using AI-generated image directly as final ad")
+            print(f"  [DESIGN] All text, buttons, CTAs are rendered in the image by the AI model")
+            print(f"  [DESIGN] No PIL overlay composition needed")
 
-            # Save English text as secondary BEFORE translating
-            english_headline = content.headline
-            english_features = list(content.features)
-            english_cta = self.ad_designer._get_cta_text(content)
+            if product_img:
+                # Resize to 1080x1080 if not already
+                if product_img.size != (1080, 1080):
+                    print(f"  [DESIGN] Resizing from {product_img.size} to 1080x1080")
+                    product_img = product_img.resize((1080, 1080), Image.LANCZOS)
 
-            # Update ad content text to use the primary language
-            if primary_lang != "en" and primary_lang in result.translations:
-                print(f"  [DESIGN] Applying {primary_lang} translations to ad text...")
-                t = result.translations[primary_lang]
-                translated_headline = (
-                    t.get("product_title", "")
-                    or t.get("tagline", "")
-                    or t.get("description", "")
-                )
-                if translated_headline:
-                    content.headline = translated_headline
-                    print(f"  [DESIGN] Translated headline: \"{translated_headline[:60]}\"")
-                content.tagline = t.get("tagline", "") or content.tagline
+                pamphlet = product_img.convert("RGB")
+                pamphlet_path = str(OUTPUT_DIR / f"pamphlet_{timestamp}.png")
+                pamphlet.save(pamphlet_path, quality=95)
+                result.pamphlet_path = pamphlet_path
+                print(f"  [DESIGN] Pamphlet saved: {pamphlet_path}")
+                print(f"  [DESIGN] Pamphlet size: {pamphlet.size}")
+            else:
+                print(f"  [DESIGN] WARNING: No product image available!")
+                result.errors.append("No image generated for ad")
 
-                translated_cta = t.get("cta", "")
-                if translated_cta:
-                    content.cta_text = translated_cta
-                    print(f"  [DESIGN] Translated CTA: \"{translated_cta}\"")
-                else:
-                    try:
-                        content.cta_text = self.translator.translate(english_cta, primary_lang) or english_cta
-                        print(f"  [DESIGN] CTA translated via GoogleTranslator: \"{content.cta_text}\"")
-                    except Exception:
-                        print(f"  [DESIGN] CTA translation failed, using English: \"{english_cta}\"")
-
-                translated_features = []
-                for feat in content.features[:6]:
-                    try:
-                        tf = self.translator.translate(feat, primary_lang)
-                        translated_features.append(tf if tf else feat)
-                    except Exception:
-                        translated_features.append(feat)
-                if translated_features:
-                    content.features = translated_features
-                    print(f"  [DESIGN] Translated {len(translated_features)} features")
-
-                if "en" in languages:
-                    content.headline_secondary = english_headline
-                    content.features_secondary = english_features[:4]
-                    content.cta_secondary = english_cta
-                    print(f"  [DESIGN] English secondary text set for bilingual ad")
-
-            print(f"  [DESIGN] Composing pamphlet...")
-            pamphlet = self.ad_designer.compose(content)
-            pamphlet_path = str(OUTPUT_DIR / f"pamphlet_{timestamp}.png")
-            pamphlet.save(pamphlet_path, quality=95)
-            result.pamphlet_path = pamphlet_path
             result.stage_timings["composition"] = time.time() - t0
-            print(f"  [DESIGN] Pamphlet saved: {pamphlet_path}")
-            print(f"  [DESIGN] Pamphlet size: {pamphlet.size}")
             print(f"  [DESIGN] Time: {result.stage_timings['composition']:.3f}s")
 
             # Save to database
