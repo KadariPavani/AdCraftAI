@@ -93,6 +93,43 @@ async def serve_dataset_explorer():
     return HTMLResponse(content="<h1>Dataset Explorer</h1><p>Page not found.</p>")
 
 
+def _build_gallery_html(image_urls: list, product_name: str) -> str:
+    """Build a horizontal scrollable image gallery for the hub page."""
+    if not image_urls or len(image_urls) < 2:
+        return ""
+    imgs = "".join(
+        f"<img src='{url}' alt='{product_name}' class='w-32 h-32 object-cover rounded-lg flex-shrink-0 border border-gray-100'>"
+        for url in image_urls[:6]
+    )
+    return f"""<div class="mt-4">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Gallery</h3>
+                <div class="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">{imgs}</div>
+            </div>"""
+
+
+def _build_content_card(title: str, content: str, card_id: str, icon_path: str) -> str:
+    """Build a copyable content card for generated text (caption, whatsapp copy)."""
+    if not content:
+        return ""
+    # Escape single quotes and backslashes for JS
+    safe_content = content.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+    return f"""<div class="mt-4">
+                <div class="bg-white rounded-xl border border-gray-100 overflow-hidden card-hover">
+                    <div class="flex items-center justify-between px-4 py-2.5 border-b border-gray-50">
+                        <div class="flex items-center space-x-2">
+                            <svg class="w-3.5 h-3.5 text-gray-400" fill="currentColor" viewBox="0 0 24 24"><path d="{icon_path}"/></svg>
+                            <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title}</span>
+                        </div>
+                        <button onclick="copyText('{safe_content}')" class="text-xs text-gray-400 hover:text-gray-600 transition flex items-center space-x-1 px-2 py-1 rounded-md hover:bg-gray-50">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                            <span>Copy</span>
+                        </button>
+                    </div>
+                    <p class="text-sm text-gray-600 leading-relaxed p-4">{content}</p>
+                </div>
+            </div>"""
+
+
 @app.get("/hub/{product_id}", response_class=HTMLResponse)
 async def serve_product_hub(product_id: str):
     """Serve product hub page - public shareable link."""
@@ -104,56 +141,213 @@ async def serve_product_hub(product_id: str):
     content_list = pipeline.db.get_product_content(product_id)
     analytics = pipeline.db.get_analytics(product_id)
 
-    # Build a simple product hub page
+    # Build product hub page
     latest_content = content_list[0] if content_list else None
     pamphlet_url = ""
+    product_image_url = ""
     if latest_content and latest_content.get("pamphlet_path"):
         pamphlet_url = f"/file?path={latest_content['pamphlet_path']}"
+    if latest_content and latest_content.get("product_image_path"):
+        product_image_url = f"/file?path={latest_content['product_image_path']}"
 
     brand = product.get("brand", product.get("name", "Product"))
     description = product.get("description", "")
+    product_title = ""
+    instagram_caption = ""
+    whatsapp_copy = ""
+    hashtags = ""
     if latest_content and latest_content.get("content_json"):
         cj = latest_content["content_json"]
         if isinstance(cj, dict):
             description = cj.get("product_description", description)
+            product_title = cj.get("product_title", "")
+            instagram_caption = cj.get("instagram_caption", "")
+            whatsapp_copy = cj.get("whatsapp_copy", "")
+            hashtags = cj.get("hashtags", "")
+
+    product_name = product.get("name", brand)
+    category = product.get("category", "")
+    price = product.get("price", "")
+
+    # Product images for gallery
+    image_urls = [f"/file?path={ip}" for ip in product.get("image_paths", [])]
+    # Use pamphlet as hero, fallback to first product image
+    hero_image = pamphlet_url or product_image_url or (image_urls[0] if image_urls else "")
+
+    # Analytics summary
+    total_clicks = analytics.get("total_clicks", 0) if analytics else 0
+    platform_clicks = analytics.get("platform_clicks", {}) if analytics else {}
+
+    # Build hashtag pills
+    hashtag_list = []
+    if hashtags:
+        if isinstance(hashtags, list):
+            hashtag_list = hashtags
+        elif isinstance(hashtags, str):
+            hashtag_list = [h.strip() for h in hashtags.replace("#", "").split() if h.strip()]
+
+    # Pre-build complex HTML sections
+    category_html = f'<span class="text-xs text-gray-400 bg-gray-50 px-2.5 py-1 rounded-full">{category}</span>' if category else ''
+
+    if hero_image:
+        hero_html = f"<div class='relative hero-gradient'><img src='{hero_image}' class='w-full max-h-96 object-cover' alt='{product_name}'></div>"
+    else:
+        hero_html = "<div class='h-24 bg-gradient-to-br from-gray-100 to-gray-200'></div>"
+
+    brand_badge = f'<span class="inline-block text-xs font-medium bg-gray-900 text-white px-2.5 py-0.5 rounded-full mb-2">{brand}</span>' if brand and brand != product_name else ''
+    title_display = product_title or product_name
+    subtitle_html = f'<p class="text-sm text-gray-400 mt-0.5">{product_name}</p>' if product_title and product_title != product_name else ''
+    price_html = f'<span class="text-xl font-bold text-gray-900 flex-shrink-0 bg-gray-50 px-3 py-1 rounded-lg">{price}</span>' if price else ''
+    desc_html = f'<p class="text-sm text-gray-600 mt-3 leading-relaxed">{description}</p>' if description else ''
+
+    if hashtag_list:
+        tag_pills = "".join(f"<span class='text-xs text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full'>#{h}</span>" for h in hashtag_list[:8])
+        hashtag_html = f"<div class='flex flex-wrap gap-1.5 mt-3'>{tag_pills}</div>"
+    else:
+        hashtag_html = ""
+
+    gallery_html = _build_gallery_html(image_urls, product_name)
+    ig_card_html = _build_content_card("Instagram Caption", instagram_caption, "instagram", "M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z")
+    wa_card_html = _build_content_card("WhatsApp Message", whatsapp_copy, "whatsapp", "M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492l4.624-1.467A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75c-2.115 0-4.093-.657-5.727-1.778l-.41-.253-2.742.87.908-2.686-.278-.432A9.713 9.713 0 012.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75z")
+
+    if total_clicks > 0:
+        stats_html = f'''<div class="mt-5 bg-white rounded-xl border border-gray-100 p-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2">
+                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                        <span class="text-sm text-gray-500">Total Engagement</span>
+                    </div>
+                    <span class="text-sm font-semibold text-gray-900">{total_clicks} clicks</span>
+                </div>
+            </div>'''
+    else:
+        stats_html = ""
 
     hub_html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{brand} - Product</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <title>{product_name} - {brand}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        body {{ font-family: 'Inter', sans-serif; }}
+        .hero-gradient {{ background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.03) 100%); }}
+        .copy-toast {{ animation: fadeInUp 0.3s ease-out; }}
+        @keyframes fadeInUp {{ from {{ opacity:0; transform:translateY(8px); }} to {{ opacity:1; transform:translateY(0); }} }}
+        .card-hover {{ transition: box-shadow 0.2s ease, transform 0.2s ease; }}
+        .card-hover:hover {{ box-shadow: 0 4px 24px rgba(0,0,0,0.08); transform: translateY(-1px); }}
+    </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
-    <div class="max-w-lg mx-auto py-8 px-4">
-        <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
-            {"<img src='" + pamphlet_url + "' class='w-full' alt='Product'>" if pamphlet_url else ""}
-            <div class="p-6">
-                <h1 class="text-2xl font-bold text-gray-900">{brand}</h1>
-                <p class="text-gray-600 mt-2">{description}</p>
-                {f"<p class='text-xl font-semibold text-green-600 mt-3'>{product.get('price', '')}</p>" if product.get('price') else ""}
-                <div class="mt-6 space-y-3">
-                    <a href="#" onclick="track('whatsapp')"
-                       class="block w-full text-center bg-green-500 text-white py-3 rounded-xl font-semibold hover:bg-green-600 transition">
-                        WhatsApp
+    <!-- Nav -->
+    <nav class="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <svg class="w-4 h-4 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <span class="font-bold text-gray-900 text-sm tracking-tight">AdCraft AI</span>
+            </div>
+            <div class="flex items-center space-x-3">
+                {category_html}
+                <button onclick="shareHub()" class="text-gray-400 hover:text-gray-600 transition p-1" title="Share">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-2xl mx-auto">
+        <!-- Hero Section -->
+        {hero_html}
+
+        <div class="px-4 pb-8">
+            <!-- Product Header -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 -mt-6 relative z-10 p-5">
+                <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0 flex-1">
+                        {brand_badge}
+                        <h1 class="text-xl font-bold text-gray-900 leading-tight">{title_display}</h1>
+                        {subtitle_html}
+                    </div>
+                    {price_html}
+                </div>
+                {desc_html}
+
+                <!-- Hashtags -->
+                {hashtag_html}
+            </div>
+
+            <!-- Image Gallery -->
+            {gallery_html}
+
+            <!-- Generated Content Cards -->
+            {ig_card_html}
+
+            {wa_card_html}
+
+            <!-- Share Actions -->
+            <div class="mt-5">
+                <h3 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Share Product</h3>
+                <div class="grid grid-cols-3 gap-2.5">
+                    <a href="#" onclick="track('whatsapp'); return false;"
+                       class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-4 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition cursor-pointer">
+                        <svg class="w-5 h-5 mb-1.5 text-green-600" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492l4.624-1.467A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75c-2.115 0-4.093-.657-5.727-1.778l-.41-.253-2.742.87.908-2.686-.278-.432A9.713 9.713 0 012.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75z"/></svg>
+                        <span class="text-xs">WhatsApp</span>
                     </a>
-                    <a href="#" onclick="track('instagram')"
-                       class="block w-full text-center bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl font-semibold hover:opacity-90 transition">
-                        Instagram
+                    <a href="#" onclick="track('instagram'); return false;"
+                       class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-4 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition cursor-pointer">
+                        <svg class="w-5 h-5 mb-1.5 text-pink-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                        <span class="text-xs">Instagram</span>
                     </a>
-                    <a href="#" onclick="track('website')"
-                       class="block w-full text-center bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition">
-                        Visit Website
+                    <a href="#" onclick="track('website'); return false;"
+                       class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-4 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition cursor-pointer">
+                        <svg class="w-5 h-5 mb-1.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
+                        <span class="text-xs">Website</span>
                     </a>
                 </div>
             </div>
+
+            <!-- Engagement Stats -->
+            {stats_html}
+
+            <!-- Footer -->
+            <div class="mt-8 pb-4 text-center">
+                <div class="flex items-center justify-center space-x-1.5 text-gray-400">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    <span class="text-xs">Powered by Adcraft AI</span>
+                </div>
+            </div>
         </div>
-        <p class="text-center text-gray-400 text-sm mt-6">Powered by AdCraft AI</p>
     </div>
+
+    <!-- Copy Toast -->
+    <div id="copyToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2.5 rounded-xl shadow-lg hidden copy-toast z-50">
+        <div class="flex items-center space-x-2">
+            <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            <span>Copied to clipboard</span>
+        </div>
+    </div>
+
     <script>
         function track(platform) {{
             fetch('/api/track/{product_id}?platform=' + platform, {{method: 'POST'}});
+        }}
+
+        function copyText(text) {{
+            navigator.clipboard.writeText(text).then(() => {{
+                const toast = document.getElementById('copyToast');
+                toast.classList.remove('hidden');
+                setTimeout(() => toast.classList.add('hidden'), 2000);
+            }});
+        }}
+
+        function shareHub() {{
+            if (navigator.share) {{
+                navigator.share({{ title: '{product_name}', url: window.location.href }});
+            }} else {{
+                copyText(window.location.href);
+            }}
         }}
     </script>
 </body>
