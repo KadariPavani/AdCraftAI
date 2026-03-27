@@ -101,6 +101,40 @@ class Database:
             products.append(d)
         return products
 
+    def update_product(self, product_id: str, **kwargs) -> bool:
+        """Update product fields. Only updates provided fields."""
+        conn = self._conn()
+        product = conn.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+        if not product:
+            conn.close()
+            return False
+
+        updatable = ["name", "description", "price", "category", "brand",
+                      "image_paths", "enhanced_image_path"]
+        sets = []
+        values = []
+        for key in updatable:
+            if key in kwargs:
+                val = kwargs[key]
+                if key == "image_paths" and isinstance(val, list):
+                    val = json.dumps(val)
+                sets.append(f"{key} = ?")
+                values.append(val)
+
+        if not sets:
+            conn.close()
+            return False
+
+        sets.append("updated_at = ?")
+        values.append(datetime.now().isoformat())
+        values.append(product_id)
+
+        conn.execute(f"UPDATE products SET {', '.join(sets)} WHERE id = ?", values)
+        conn.commit()
+        conn.close()
+        print(f"    [DB] Product updated: {product_id} | Fields: {list(kwargs.keys())}")
+        return True
+
     def delete_product(self, product_id: str):
         conn = self._conn()
         conn.execute("DELETE FROM generated_content WHERE product_id = ?", (product_id,))
