@@ -98,6 +98,7 @@ MAdVerse/
 │   ├── clip_extract.py       # CLIP feature extraction + prompt generation from reference images
 │   ├── image_gen.py          # Image generation (Pollinations/HF/gradient)
 │   ├── content_gen.py        # Text generation, translation, image enhancement
+│   ├── smart_prompt.py       # Smart prompt parser (field extraction, category detection)
 │   ├── designer.py           # Ad designer (6 themes, reference-driven selection)
 │   ├── database.py           # SQLite product catalog + analytics
 │   └── static/
@@ -164,30 +165,79 @@ Only needed if rebuilding from scratch. Pre-built indexes are included.
 
 ---
 
+## Smart Prompt Parser
+
+The Smart Prompt Parser extracts structured product catalog data from free-text descriptions in **<50ms** with zero API calls. It powers the Step 1 "Analyze" flow in the UI.
+
+### How It Works
+
+1. **Scene masking** — Extracts scene descriptions ("show an Indian bride at luxury showroom") first, preventing scene elements from being misidentified as the product
+2. **Brand detection** — 150+ known brands with category hints (longest-match-first, word-boundary matching), dataset fuzzy matcher, and CamelCase heuristic for unknown brands
+3. **Product type detection** — 150+ product types across 9 categories, globally sorted by length for accurate matching ("water purifier" matches before "water")
+4. **Field extraction** — Regex patterns for price, size, color, material, features, audience, occasion, weight, flavor, warranty, and more
+5. **Category inference** — Weighted keyword scoring + brand-category knowledge map
+6. **AI enhancement** — Optional Pollinations AI toggle for complex/ambiguous prompts
+
+### Example Prompts
+
+**Known Brands:**
+
+| Category | Example Prompt |
+|----------|---------------|
+| Footwear | `Nike Air Max 90 men's running shoes, sizes UK 7-12, black/white/infrared colorway, mesh and leather upper, visible Air unit, price Rs 12,995, lightweight 300g, ideal for running and casual wear` |
+| Electronics | `Samsung Galaxy S24 Ultra smartphone, 6.8 inch Dynamic AMOLED display, 200MP camera, Snapdragon 8 Gen 3, 12GB RAM, 256GB storage, 5000mAh battery, titanium frame, price Rs 1,29,999` |
+| Jewelry | `Kalyan Jewellers Tejasvi collection 22K gold bangles set of 4, weight 40 grams, Rs 1,80,000 - 2,50,000, intricate filigree work, BIS hallmarked, for women, sizes 2.4 to 2.8, wedding, show an Indian bride in red silk saree at luxury showroom` |
+| Beverages | `Bisleri mineral water 1 liter bottle, 10+2 international quality tests, pH balanced, zero calories, available in 250ml 500ml 1L 2L packs` |
+
+**New / Unknown Brands (works with same accuracy):**
+
+| Category | Example Prompt |
+|----------|---------------|
+| Footwear | `StrideFlex AeroGlide running shoes for men, lightweight mesh upper, breathable cushioning, UK 7-12, black and neon green, Rs 5499, ideal for sports` |
+| Electronics | `NovaTech Pulse X1 wireless earbuds with 50hr battery life, active noise cancellation, Bluetooth 5.4, IPX7 waterproof, USB-C fast charging, Rs 3999` |
+| Personal Care | `DermaCure vitamin C brightening face wash with niacinamide and salicylic acid, for oily skin, paraben free, 150ml, Rs 449, for men and women` |
+| Jewelry | `RaniGold bridal choker necklace set 22k gold with uncut polki diamonds, kundan work, BIS hallmarked, for women, wedding, 85 grams, Rs 3,50,000` |
+| Automotive | `VoltRider Storm 200 electric motorcycle, 150km range, 8kW motor, dual disc brakes, matte black, Rs 1,85,000, show rider on open highway at sunset` |
+| Food | `CrunchBox quinoa puffs 120g pack, tangy tomato flavor, baked not fried, high protein, gluten free, Rs 99` |
+| Clothing | `ThreadCraft heritage cotton kurta set for men, festive wear, embroidered Chikankari style, sizes S M L XL, cream and gold, Rs 2899` |
+| Beverages | `PureZen green tea with jasmine and honey flavor, 25 tea bags pack, antioxidant rich, zero calories, Rs 349` |
+| Home Appliances | `BreezeCool Glacier 1.5 ton 5 star inverter split air conditioner, copper condenser, Wi-Fi enabled, 2 year warranty, white, Rs 38999` |
+
+---
+
 ## Web App Features
 
 The FastAPI web application (`run.py`) provides:
 
 - **Ad Generation** — Text prompt + optional image → full ad creative with dataset-driven design
+- **Save & Share** — One-click save generated ads as products with shareable hub pages
+- **Social Media Sharing** — Share across 8 platforms: WhatsApp, Instagram, Facebook, X (Twitter), LinkedIn, Telegram, Pinterest, Email
 - **Product Catalog** — CRUD operations for managing products
 - **Image Enhancement** — Brightness, contrast, sharpness adjustments
 - **Multi-Language Captions** — 25+ languages via deep_translator
 - **Shareable Hub Pages** — Public product pages with analytics tracking
+- **Engagement Analytics** — Track clicks and shares by platform
 
 ### API Endpoints
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/generate` | POST | Generate ad from text + optional image |
+| `/api/save-generated` | POST | Save generated ad as product with all content |
 | `/api/products` | GET/POST | Product catalog CRUD |
 | `/api/products/{id}` | GET/DELETE | Product details / delete |
 | `/api/products/{id}/generate` | POST | Generate for existing product |
 | `/api/enhance` | POST | Image enhancement |
 | `/api/describe` | POST | Generate product description |
 | `/api/captions` | POST | Multi-language caption generation |
+| `/api/parse-prompt` | POST | Smart prompt parsing (extract product fields from text) |
+| `/api/validate-fields` | POST | Validate and merge additional fields into parsed data |
+| `/api/categories` | GET | List all supported product categories with fields |
 | `/api/stats` | GET | Pipeline statistics |
 | `/api/languages` | GET | Supported languages list |
 | `/hub/{product_id}` | GET | Public shareable product page |
+| `/api/track/{product_id}` | POST | Track social share clicks by platform |
+| `/api/analytics/{product_id}` | GET | Get engagement analytics |
 
 ---
 

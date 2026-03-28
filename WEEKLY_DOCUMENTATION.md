@@ -16,14 +16,15 @@
 5. [Known vs Unknown Brands/Products/Categories: How the Pipeline Behaves](#5-known-vs-unknown-brandsproductscategories-how-the-pipeline-behaves)
    - [5.1-5.8 Brand Scenarios (Known, Collision, Unknown, Override)](#51-case-a-known-brand-eg-nike-running-shoes-ad)
    - [5.9-5.12 Category Scenarios (Known, Unknown, Novel, Gap Analysis)](#59-known-vs-unknown-categories-how-categorization-works)
-6. [Module-by-Module Breakdown](#6-module-by-module-breakdown)
-7. [Technologies and Libraries Used](#7-technologies-and-libraries-used)
-8. [API Endpoints](#8-api-endpoints)
-9. [What From the Dataset Is Actually Used and Where](#9-what-from-the-dataset-is-actually-used-and-where)
-10. [Dataset Enhancement (Self-Improving Loop)](#10-dataset-enhancement-self-improving-loop)
-11. [File Structure](#11-file-structure)
-12. [How to Run](#12-how-to-run)
-13. [Pros and Cons](#13-pros-and-cons)
+6. [Smart Prompt Parser](#6-smart-prompt-parser)
+7. [Module-by-Module Breakdown](#7-module-by-module-breakdown)
+8. [Technologies and Libraries Used](#8-technologies-and-libraries-used)
+9. [API Endpoints](#9-api-endpoints)
+10. [What From the Dataset Is Actually Used and Where](#10-what-from-the-dataset-is-actually-used-and-where)
+11. [Dataset Enhancement (Self-Improving Loop)](#11-dataset-enhancement-self-improving-loop)
+12. [File Structure](#12-file-structure)
+13. [How to Run](#13-how-to-run)
+14. [Pros and Cons](#14-pros-and-cons)
 
 ---
 
@@ -707,7 +708,101 @@ The current system has **no independent category/product classifier**. This mean
 
 ---
 
-## 6. Module-by-Module Breakdown
+## 6. Smart Prompt Parser
+
+### Overview
+
+The Smart Prompt Parser (`app/smart_prompt.py`) extracts structured product catalog data from free-text descriptions. It powers the "Analyze & Continue" step in the UI wizard, enabling users to type a natural language product description and have it automatically parsed into structured fields (brand, product name, type, category, price, size, material, color, features, etc.).
+
+**Performance:** <50ms for all prompts (zero API calls in default mode). Optional AI-enhanced mode adds ~3-8s via Pollinations.
+
+### Architecture
+
+```
+User Prompt: "Nike Air Max 90 running shoes for men, black, Rs 12,995, UK 7-12"
+    |
+    v
+1. Scene Masking ---------> Extract scene description first, mask from product detection
+    |                       ("show an Indian bride in red silk saree" -> masked)
+    v
+2. Brand Detection -------> Known brands (150+, longest-first) -> Dataset fuzzy match -> CamelCase heuristic
+    |                       Result: brand="Nike"
+    v
+3. Product Type ----------> 150+ types globally sorted by length, word-boundary matching
+    |                       "water purifier" beats "water", "running shoes" beats "shoes"
+    v
+4. Field Extraction ------> Regex patterns for price, size, color, material, audience, etc.
+    |                       All matching uses \b word boundaries to prevent false positives
+    v
+5. Category Inference ----> Weighted keyword scoring + brand-category knowledge map
+    |                       "smartphone" (3pts) beats "phone" (2pts)
+    v
+6. Product Name ----------> Quoted text -> explicit patterns -> brand+model -> fallback to type
+    |
+    v
+7. Completeness Check ----> Compare extracted fields against category-specific required fields
+    |
+    v
+Output: { extracted fields, category, missing_required, completeness score, rich_prompt }
+```
+
+### Key Design Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| **Scene masking before product detection** | Prevents scene elements (e.g., "saree" in "bride wearing red silk saree") from being detected as the product type |
+| **Word boundary matching everywhere** | Prevents substring false positives: "casio" inside "occasion", "hp" inside "shampoo", "lassi" inside "classic" |
+| **Global longest-match product types** | Ensures "water purifier" (home_appliances) matches before "water" (beverages) regardless of category iteration order |
+| **Brand-category knowledge map** | 150+ brands with default categories. Knowing "Nike" = footwear helps even when no product type keyword is found |
+| **Single-word brand heuristic for unknowns** | Takes only the first CamelCase word as brand ("TerraMotors EcoRide" -> brand=TerraMotors, name=EcoRide) to avoid absorbing model names |
+
+### Supported Categories & Required Fields
+
+| Category | Required Fields |
+|----------|----------------|
+| Footwear | brand, product_name, product_type, target_audience, size_range |
+| Electronics | brand, product_name, product_type, key_features |
+| Clothing & Apparel | brand, product_name, product_type, target_audience, size_range |
+| Beverages | brand, product_name, product_type, pack_size |
+| Jewelry & Watches | brand, product_name, product_type, material |
+| Automotive | brand, product_name, product_type, key_features |
+| Food & Snacks | brand, product_name, product_type, pack_size |
+| Personal Care & Beauty | brand, product_name, product_type, target_audience |
+| Home Appliances | brand, product_name, product_type, key_features |
+| General Product | brand, product_name, product_type |
+
+### Example Prompts
+
+**Known Brands (in dataset):**
+
+| Prompt | Extracted |
+|--------|-----------|
+| `Nike Air Max 90 men's running shoes, sizes UK 7-12, black/white/infrared, mesh and leather, Rs 12,995` | Brand=Nike, Name=Air Max 90 running shoes, Type=Running Shoes, Category=footwear, Audience=Men, Size=UK 7-12, Color=Black, White, Material=Mesh, Leather, Price=Rs 12,995 |
+| `Samsung Galaxy S24 Ultra smartphone, 200MP camera, Snapdragon 8 Gen 3, 12GB RAM, 5000mAh battery, titanium frame, Rs 1,29,999` | Brand=Samsung, Name=Galaxy S24 Ultra smartphone, Type=Smartphone, Category=electronics, Features=200MP camera, 5000mAh battery, 12GB RAM, Snapdragon 8 Gen 3 |
+| `Kalyan Jewellers 22K gold bangles set for women, Rs 1,80,000, BIS hallmarked, sizes 2.4 to 2.8, show bride in saree at showroom` | Brand=Kalyan Jewellers, Type=Gold Bangles, Category=jewelry, Material=22K Gold, Scene=show bride in saree at showroom (masked from product detection) |
+
+**New / Unknown Brands (no dataset entry):**
+
+| Prompt | Extracted |
+|--------|-----------|
+| `StrideFlex AeroGlide running shoes for men, lightweight mesh, breathable cushioning, UK 7-12, black and neon green, Rs 5499` | Brand=StrideFlex, Name=AeroGlide running shoes, Type=Running Shoes, Category=footwear, Audience=Men |
+| `NovaTech Pulse X1 wireless earbuds, 50hr battery, active noise cancellation, Bluetooth 5.4, IPX7 waterproof, Rs 3999` | Brand=NovaTech, Name=Pulse X1 wireless earbuds, Type=Wireless Earbuds, Category=electronics |
+| `DermaCure vitamin C brightening face wash with niacinamide, for oily skin, paraben free, 150ml, Rs 449` | Brand=DermaCure, Name=vitamin C brightening face wash, Type=Face Wash, Category=personal_care |
+| `VoltRider Storm 200 electric motorcycle, 150km range, 8kW motor, matte black, Rs 1,85,000, show rider on highway at sunset` | Brand=VoltRider, Name=Storm 200 electric motorcycle, Type=Motorcycle, Category=automotive |
+| `RaniGold bridal choker necklace set 22k gold, uncut polki diamonds, BIS hallmarked, for women, wedding, 85 grams, Rs 3,50,000` | Brand=RaniGold, Name=bridal choker necklace set, Type=Necklace, Category=jewelry |
+| `CrunchBox quinoa puffs 120g pack, tangy tomato flavor, baked not fried, high protein, gluten free, Rs 99` | Brand=CrunchBox, Name=quinoa puffs, Type=Chips, Category=food, Flavor=Tomato |
+
+### API Endpoints
+
+| Endpoint | Method | Parameters | Description |
+|----------|--------|------------|-------------|
+| `/api/parse-prompt` | POST | `prompt` (required), `use_ai` (optional, default "false") | Parse free-text into structured product data. Returns extracted fields, category, completeness score, missing required fields |
+| `/api/validate-fields` | POST | `parsed_data` (JSON), `additional_fields` (JSON) | Merge user-provided fields into previously parsed data and recalculate completeness |
+| `/api/categories` | GET | - | List all supported categories with their required and optional fields |
+
+---
+
+## 7. Module-by-Module Breakdown
 
 ### 6.1 `app/models.py` - Data Classes and Constants
 
@@ -930,7 +1025,7 @@ Wires all modules together and orchestrates the 7-stage pipeline.
 
 ---
 
-## 7. Technologies and Libraries Used
+## 8. Technologies and Libraries Used
 
 ### 7.1 Core ML / AI
 
@@ -993,7 +1088,7 @@ Wires all modules together and orchestrates the 7-stage pipeline.
 
 ---
 
-## 8. API Endpoints
+## 9. API Endpoints
 
 The FastAPI server (`app/main.py`) exposes these endpoints:
 
@@ -1002,6 +1097,12 @@ The FastAPI server (`app/main.py`) exposes these endpoints:
 | Endpoint | Method | Parameters | Description |
 |---|---|---|---|
 | `/api/generate` | POST | `prompt` (required), `languages` (comma-separated), `brand`, `image` (file) | Full ad generation pipeline. Returns pamphlet URL, product image URL, text content, translations, colors, timings |
+
+### Save & Share
+
+| Endpoint | Method | Parameters | Description |
+|---|---|---|---|
+| `/api/save-generated` | POST | `name`, `description`, `price`, `category`, `brand`, `content_json`, `pamphlet_path`, `product_image_path`, `languages_generated` | Save a generated ad as a product with all content, translations, and images. Returns `product_id` and `hub_url` for immediate sharing |
 
 ### Product Catalog
 
@@ -1012,6 +1113,14 @@ The FastAPI server (`app/main.py`) exposes these endpoints:
 | `/api/products/{id}` | GET | - | Get product details + generated content + analytics |
 | `/api/products/{id}` | DELETE | - | Delete product (cascades to content + clicks) |
 | `/api/products/{id}/generate` | POST | `prompt`, `languages` | Generate ad for an existing product |
+
+### Smart Prompt Parser
+
+| Endpoint | Method | Parameters | Description |
+|---|---|---|---|
+| `/api/parse-prompt` | POST | `prompt` (required), `use_ai` (optional, "true"/"false") | Extract structured product fields from free-text. Returns extracted fields, category, completeness, missing fields. Default is fast local mode (<50ms); set `use_ai=true` for Pollinations AI refinement (~3-8s) |
+| `/api/validate-fields` | POST | `parsed_data` (JSON string), `additional_fields` (JSON string) | Merge user-provided field values into previously parsed data and recalculate completeness |
+| `/api/categories` | GET | - | List all 10 supported product categories with required and optional field definitions |
 
 ### Content Generation
 
@@ -1033,14 +1142,14 @@ The FastAPI server (`app/main.py`) exposes these endpoints:
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/hub/{product_id}` | GET | Public shareable product page (HTML) |
-| `/api/track/{product_id}` | POST | Track click by platform (whatsapp, instagram, website) |
-| `/api/analytics/{product_id}` | GET | Get click analytics for a product |
+| `/hub/{product_id}` | GET | Public shareable product page with 8-platform social sharing (WhatsApp, Instagram, Facebook, X/Twitter, LinkedIn, Telegram, Pinterest, Email) |
+| `/api/track/{product_id}` | POST | Track click by platform (whatsapp, instagram, facebook, twitter, linkedin, telegram, pinterest, email, website) |
+| `/api/analytics/{product_id}` | GET | Get click analytics for a product by platform |
 | `/file` | GET | Serve generated files (images, JSON) from allowed directories |
 
 ---
 
-## 9. What From the Dataset Is Actually Used and Where
+## 10. What From the Dataset Is Actually Used and Where
 
 ### Summary Table
 
@@ -1075,7 +1184,74 @@ However, the **Advert_Gallery** images (1,951 images with clean brand labels in 
 
 ---
 
-## 10. Dataset Enhancement (Self-Improving Loop)
+## 10.5 Save & Share Flow (Ad → Product → Social Media)
+
+After generating an ad, users can save it as a product and share it across all social media platforms in one seamless flow:
+
+### How It Works
+
+```
+Generate Ad Creative (Step 4)
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  "Save to Products & Get Share Link"                            │
+│  POST /api/save-generated                                       │
+│  → Creates product in catalog with all generated content         │
+│  → Stores pamphlet, captions, translations, hashtags             │
+│  → Returns product_id + hub_url                                  │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Social Media Share Grid (8 platforms)                           │
+│                                                                  │
+│  WhatsApp  │  Instagram  │  Facebook  │  X (Twitter)            │
+│  LinkedIn  │  Telegram   │  Pinterest │  Email                  │
+│                                                                  │
+│  Each share button:                                              │
+│  1. Tracks click via POST /api/track/{product_id}               │
+│  2. Opens platform-specific share dialog with:                   │
+│     - Hub page URL for the product                              │
+│     - Pre-filled product title and description                  │
+│     - Pamphlet image URL (for Pinterest)                        │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Hub Page (/hub/{product_id})                                    │
+│  Public shareable page with:                                     │
+│  - Hero image (pamphlet or product image)                       │
+│  - Brand badge, title, price, description                       │
+│  - Copyable Instagram caption and WhatsApp message              │
+│  - 8-platform social share buttons                              │
+│  - Engagement analytics (clicks by platform)                    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Supported Social Media Platforms
+
+| Platform | Share Method | What's Shared |
+|----------|-------------|---------------|
+| WhatsApp | `api.whatsapp.com/send` with pre-filled text | Product title + hub URL |
+| Instagram | Copy link to clipboard + user instruction | Hub URL (user pastes in post/story) |
+| Facebook | `facebook.com/sharer/sharer.php` popup | Hub URL with OG meta preview |
+| X (Twitter) | `twitter.com/intent/tweet` popup | Product title + hub URL |
+| LinkedIn | `linkedin.com/sharing/share-offsite` popup | Hub URL with preview |
+| Telegram | `t.me/share/url` with text | Product title + hub URL |
+| Pinterest | `pinterest.com/pin/create/button` popup | Hub URL + pamphlet image + description |
+| Email | `mailto:` link | Subject: product title, Body: description + hub URL |
+
+### Analytics Tracking
+
+Every social share button click is tracked via `POST /api/track/{product_id}?platform=<name>`. Analytics are viewable:
+- In the product detail page (Products → View → Traffic Analytics)
+- On the hub page itself (Total Engagement count)
+- Via API: `GET /api/analytics/{product_id}`
+
+---
+
+## 11. Dataset Enhancement (Self-Improving Loop)
 
 After every successful ad generation, the system feeds the generated pamphlet back into the dataset.
 
@@ -1133,7 +1309,7 @@ All FAISS index updates and CSV writes are protected by `threading.Lock()`. The 
 
 ---
 
-## 11. File Structure
+## 12. File Structure
 
 ```
 MAdVerse/
@@ -1148,6 +1324,7 @@ MAdVerse/
 │   ├── logo.py                       # ProLogoFetcher (6-tier logo fallback chain)
 │   ├── image_gen.py                  # ImageGenerator (7-tier image generation fallback)
 │   ├── content_gen.py                # ContentGenerator, Translator, ImageEnhancer
+│   ├── smart_prompt.py               # SmartPromptParser (field extraction, category detection)
 │   ├── designer.py                   # ProAdDesigner (6 themes, multi-script fonts)
 │   ├── database.py                   # SQLite product catalog + click analytics
 │   ├── dataset_enhancer.py           # DatasetEnhancer (self-improving loop)
@@ -1193,7 +1370,7 @@ MAdVerse/
 
 ---
 
-## 12. How to Run
+## 13. How to Run
 
 ### Prerequisites
 - Python 3.8+
@@ -1239,7 +1416,7 @@ GOOGLE_API_KEY=<key>               # Optional, for enhanced logo fetching
 
 ---
 
-## 13. Pros and Cons
+## 14. Pros and Cons
 
 ### Pros
 
