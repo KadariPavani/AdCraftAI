@@ -752,10 +752,9 @@ async def generate_ad(
             if not brand.strip() and metadata.get("brand"):
                 brand = metadata["brand"]
                 print(f"[API] Brand from metadata: {brand}")
-            # Enrich prompt with metadata
+            # rich_prompt is used only for image generation, not content generation
             if metadata.get("rich_prompt"):
-                prompt = metadata["rich_prompt"]
-                print(f"[API] Using enriched prompt from metadata")
+                print(f"[API] Rich prompt available for image generation ({len(metadata['rich_prompt'])} chars)")
         except json.JSONDecodeError:
             print(f"[API] WARNING: Invalid product_metadata JSON, ignoring")
 
@@ -792,6 +791,7 @@ async def generate_ad(
         languages=lang_list,
         uploaded_image=uploaded_image,
         brand_override=brand.strip() if brand.strip() else None,
+        product_metadata=metadata if metadata else None,
     )
 
     # Build response

@@ -28,7 +28,7 @@ from app.colors import ColorExtractor
 from app.logo import ProLogoFetcher
 from app.clip_extract import CLIPContentExtractor
 from app.image_gen import ImageGenerator, LocalAdImageGenerator
-from app.content_gen import PollinationsTextGenerator, ContentGenerator, Translator, ImageEnhancer
+from app.content_gen import GeminiTextGenerator, GroqTextGenerator, AnthropicTextGenerator, PollinationsTextGenerator, ContentGenerator, Translator, ImageEnhancer
 from app.designer import ProAdDesigner
 from app.database import Database
 from app.dataset_enhancer import DatasetEnhancer
@@ -75,8 +75,22 @@ class AdCraftPipeline:
         self.local_image_gen = LocalAdImageGenerator()
         print(f"  [INIT] LocalAdImageGenerator initialized (8 category themes)")
         self.content_gen = ContentGenerator(self.clip_content_extractor)
-        print(f"  [INIT] ContentGenerator initialized (Pollinations AI text)")
-        self.text_gen = PollinationsTextGenerator()
+        print(f"  [INIT] ContentGenerator initialized (Gemini -> Groq -> Anthropic -> Pollinations)")
+        self.gemini_text_gen = GeminiTextGenerator()
+        self.groq_text_gen = GroqTextGenerator()
+        self.anthropic_text_gen = AnthropicTextGenerator()
+        self.pollinations_text_gen = PollinationsTextGenerator()
+        # Use best available text_gen for pipeline (category inference, image prompt)
+        for name, gen in [("Gemini", self.gemini_text_gen), ("Groq", self.groq_text_gen),
+                          ("Anthropic", self.anthropic_text_gen)]:
+            if gen.available:
+                self.text_gen = gen
+                self._text_gen_name = name
+                break
+        else:
+            self.text_gen = self.pollinations_text_gen
+            self._text_gen_name = "Pollinations"
+        print(f"  [INIT] Pipeline text_gen: {self._text_gen_name}")
         print(f"  [INIT] PollinationsTextGenerator initialized (URL: {PollinationsTextGenerator.URL})")
         self.translator = Translator()
         print(f"  [INIT] Translator initialized (GoogleTranslator - free, no key)")
@@ -218,7 +232,8 @@ class AdCraftPipeline:
     def generate(self, query: str, languages: List[str] = None,
                  uploaded_image: Image.Image = None,
                  product_id: str = None,
-                 brand_override: str = None) -> GenerationResult:
+                 brand_override: str = None,
+                 product_metadata: dict = None) -> GenerationResult:
         if languages is None:
             languages = ["en"]
 
@@ -362,17 +377,45 @@ class AdCraftPipeline:
             print(f"  [CONTENT] Final category: {category} / Subcategory: {subcategory}")
 
             # Build a comprehensive ad image prompt using LLM
-            # The prompt instructs the image model to render ALL ad elements
-            # (headline, CTA button, tagline, features, brand, price) directly into the image
-            print(f"\n  [AI-PROMPT] Building complete ad image prompt via LLM...")
-            print(f"  [AI-PROMPT] Model: openai (via Pollinations text API)")
-            print(f"  [AI-PROMPT] Goal: Generate COMPLETE ad with all text/buttons/CTAs in the image")
+            print(f"\n  [AI-PROMPT] Building ad image prompt via LLM...")
+            print(f"  [AI-PROMPT] Goal: Generate accurate product image with ad layout")
             brand_clean = brand.replace("_", " ")
+
+            # Extract specific product name from metadata or query
+            import re as _re
+            product_name = ""
+            if product_metadata:
+                product_name = product_metadata.get("product_name", "") or product_metadata.get("product_type", "")
+            if not product_name:
+                # Fall back to extracting from query
+                product_name = self.content_gen._extract_product_from_query(query, brand_clean)
+            if not product_name:
+                product_name = subcategory.replace("_", " ") if subcategory else category.replace("_", " ")
+            print(f"  [AI-PROMPT] Product name for image: \"{product_name}\"")
+
+            # Build product detail string for image prompt
+            product_detail_parts = [product_name]
+            if product_metadata:
+                for field in ["material", "color", "key_features", "occasion"]:
+                    val = product_metadata.get(field, "")
+                    if val:
+                        product_detail_parts.append(f"{field}: {val}")
+            product_detail_str = ", ".join(product_detail_parts)
+
+            # Get scene description from metadata if available
+            scene_desc = ""
+            if product_metadata:
+                scene_desc = product_metadata.get("scene_description", "")
+            # Also check if rich_prompt has scene info
+            rich_prompt = ""
+            if product_metadata:
+                rich_prompt = product_metadata.get("rich_prompt", "")
 
             # First generate the ad copy so we can include it in the image prompt
             print(f"\n  [TEXT-GEN-PRE] Pre-generating ad copy for image prompt inclusion...")
             pre_text_content = self.content_gen.generate_product_content(
-                brand, category, subcategory, [], "", query
+                brand, category, subcategory, [], "", query,
+                product_metadata=product_metadata,
             )
             pre_headline = pre_text_content.get("headline", "") or brand_clean
             pre_tagline = pre_text_content.get("tagline", "")
@@ -381,72 +424,70 @@ class AdCraftPipeline:
             print(f"  [TEXT-GEN-PRE] Pre-headline: \"{pre_headline}\"")
             print(f"  [TEXT-GEN-PRE] Pre-CTA: \"{pre_cta}\"")
 
-            # Extract price from query if present
-            import re as _re
-            price_match = _re.search(r'(?:rs\.?|inr|usd|\$|₹|price[:\s]+)\s*[\d,]+(?:\.\d{2})?', query, _re.I)
-            price_text = price_match.group().strip() if price_match else ""
+            # Extract price from query or metadata
+            price_text = ""
+            if product_metadata and product_metadata.get("price"):
+                price_text = str(product_metadata["price"])
+            if not price_text:
+                price_match = _re.search(r'(?:rs\.?|inr|usd|\$|₹|price[:\s]+)\s*[\d,]+(?:\.\d{2})?', query, _re.I)
+                price_text = price_match.group().strip() if price_match else ""
 
             try:
                 ai_prompt = self.text_gen.generate(
                     system_prompt=(
-                        "You are an expert at writing image generation prompts for creating COMPLETE, "
-                        "READY-TO-USE advertisement images. Your prompt must instruct the AI image model "
-                        "to render a FINISHED advertisement with ALL visual elements baked into the image.\n\n"
-                        "The generated image MUST include these elements as part of the image itself:\n"
-                        "1. The product shown prominently\n"
-                        "2. The EXACT headline text rendered in bold typography\n"
-                        "3. A visible CTA button with the EXACT button text\n"
-                        "4. The brand name displayed prominently\n"
-                        "5. Key features/selling points as text in the image\n"
-                        "6. Price displayed if provided\n"
-                        "7. Tagline text if provided\n"
-                        "8. Professional ad layout, typography, colors, and composition\n\n"
-                        "CRITICAL: Include the EXACT text strings that must appear in the image. "
-                        "Describe the layout, typography style, color scheme, and visual hierarchy. "
-                        "The result should look like a polished graphic-designed advertisement poster.\n\n"
+                        "You are an expert at writing image generation prompts for product advertisement images.\n\n"
+                        "CRITICAL RULES:\n"
+                        "1. The PRODUCT must be the EXACT product described — be very specific about what the "
+                        "product looks like. For example, 'gold bangles' should show BANGLES (circular wrist "
+                        "jewelry), NOT earrings or necklaces. Describe the exact product shape, style, and appearance.\n"
+                        "2. Show the product PROMINENTLY and ACCURATELY in the center of the image.\n"
+                        "3. Include text overlay elements: headline text, brand name, CTA button, price if provided.\n"
+                        "4. Use professional ad layout with clean typography and composition.\n"
+                        "5. Describe lighting, backdrop, and mood appropriate for the product category.\n\n"
                         "Output ONLY the image generation prompt (4-6 sentences), nothing else."
                     ),
                     user_prompt=(
                         f"Brand: {brand_clean}\n"
-                        f"Category: {category}\n"
-                        f"Product: {subcategory.replace('_', ' ') if subcategory else category.replace('_', ' ')}\n"
-                        f"User request: {query}\n\n"
-                        f"EXACT text to include in the image:\n"
+                        f"Product: {product_detail_str}\n"
+                        f"User request: {query}\n"
+                        + (f"Scene: {scene_desc}\n" if scene_desc else "")
+                        + f"\nText overlay elements:\n"
                         f"- Headline: \"{pre_headline}\"\n"
-                        f"- CTA Button: \"{pre_cta}\"\n"
                         f"- Brand: \"{brand_clean}\"\n"
-                        f"- Tagline: \"{pre_tagline}\"\n"
+                        f"- CTA Button: \"{pre_cta}\"\n"
+                        + (f"- Tagline: \"{pre_tagline}\"\n" if pre_tagline else "")
                         + (f"- Price: \"{price_text}\"\n" if price_text else "")
-                        + (f"- Features: {', '.join(pre_features)}\n" if pre_features else "")
-                        + f"\nGenerate a prompt for a COMPLETE advertisement image with ALL these elements."
+                        + f"\nGenerate an image prompt that shows the EXACT product accurately with ad layout."
                     ),
                 )
                 if ai_prompt and len(ai_prompt) > 50:
                     diffusion_prompt = (
                         f"{ai_prompt.strip()}, "
-                        f"professional advertisement design, graphic design, "
-                        f"clean typography, sharp text rendering, 8k, high quality, "
-                        f"commercial ad poster, polished layout"
+                        f"professional advertisement, product photography, "
+                        f"accurate product depiction, clean typography, "
+                        f"8k, high quality, commercial ad poster"
                     )
-                    print(f"  [AI-PROMPT] SUCCESS - Complete ad prompt generated ({len(diffusion_prompt)} chars)")
-                    print(f"  [AI-PROMPT] Prompt: {diffusion_prompt[:150]}...")
+                    print(f"  [AI-PROMPT] SUCCESS - Ad prompt generated ({len(diffusion_prompt)} chars)")
+                    print(f"  [AI-PROMPT] Prompt: {diffusion_prompt[:200]}...")
                 else:
                     raise ValueError(f"AI response too short ({len(ai_prompt) if ai_prompt else 0} chars)")
             except Exception as e:
                 print(f"  [AI-PROMPT] LLM prompt failed: {e}, using structured fallback")
-                # Structured fallback that explicitly includes all ad elements
+                # Structured fallback with specific product description
                 features_text = ", ".join(pre_features) if pre_features else ""
                 diffusion_prompt = (
-                    f"Professional advertisement poster for {brand_clean} {subcategory or category}. "
-                    f"Bold headline text reading \"{pre_headline}\" at the top. "
-                    f"Product shown prominently in the center. "
+                    f"Professional advertisement poster for {brand_clean}. "
+                    f"A stunning photograph of {product_detail_str} shown prominently in the center. "
+                    + (f"Scene: {scene_desc}. " if scene_desc else
+                       f"Elegant studio lighting, luxurious backdrop. ")
+                    + f"Bold headline text \"{pre_headline}\" at the top. "
                     f"Brand name \"{brand_clean}\" displayed clearly. "
-                    + (f"Tagline \"{pre_tagline}\" below the headline. " if pre_tagline else "")
-                    + (f"Price \"{price_text}\" shown prominently. " if price_text else "")
+                    + (f"Tagline \"{pre_tagline}\". " if pre_tagline else "")
+                    + (f"Price \"{price_text}\" shown. " if price_text else "")
                     + (f"Key features: {features_text}. " if features_text else "")
-                    + f"A bold CTA button reading \"{pre_cta}\" at the bottom. "
-                    f"Professional graphic design, clean modern typography, vibrant colors, "
-                    f"polished commercial ad layout, 8k quality, sharp text rendering."
+                    + f"CTA button \"{pre_cta}\" at the bottom. "
+                    f"Professional graphic design, clean modern typography, "
+                    f"accurate product depiction, 8k quality, commercial ad layout."
                 )
 
             # Reuse the pre-generated text content (already generated above for the image prompt)

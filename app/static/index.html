@@ -959,9 +959,8 @@ Example: Nike Air Max 90 running shoes for men, sizes UK 7-12, black and white c
             try {
                 const formData = new FormData();
 
-                // Use the enriched prompt from Smart Prompt if available
-                const richPrompt = parsedPromptData?.rich_prompt || prompt;
-                formData.append('prompt', richPrompt);
+                // Send original user prompt (not the rich_prompt which is for image gen only)
+                formData.append('prompt', prompt);
                 formData.append('languages', Array.from(selectedLangs).join(','));
 
                 // Brand from parsed data
@@ -970,9 +969,13 @@ Example: Nike Air Max 90 running shoes for men, sizes UK 7-12, black and white c
                     formData.append('brand', brandFromParse);
                 }
 
-                // Send full product metadata for enriched generation
-                if (parsedPromptData && parsedPromptData.extracted) {
-                    formData.append('product_metadata', JSON.stringify(parsedPromptData.extracted));
+                // Send full product metadata including rich_prompt for image generation
+                if (parsedPromptData) {
+                    const metadata = {
+                        ...(parsedPromptData.extracted || {}),
+                        rich_prompt: parsedPromptData.rich_prompt || '',
+                    };
+                    formData.append('product_metadata', JSON.stringify(metadata));
                 }
 
                 const imageInput = document.getElementById('imageInput');
