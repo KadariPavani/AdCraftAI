@@ -58,7 +58,9 @@ DEFAULT_NEGATIVE_PROMPT = (
     "extra fingers, extra limbs, disfigured face, bad anatomy, bad proportions, "
     "poorly drawn hands, poorly drawn face, mutation, amateur, clip art, cartoon, "
     "frame, border, collage, split image, multiple views, "
-    "misspelled text, garbled letters, illegible text, wrong spelling"
+    "misspelled text, garbled letters, illegible text, wrong spelling, typos, spelling errors, "
+    "CTA buttons, 'buy now' button, 'shop now' button, action buttons, call-to-action buttons, "
+    "solid poster background, flat background color, plain colored background, poster-style layout"
 )
 
 # ---------------------------------------------------------------------------

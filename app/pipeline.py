@@ -441,9 +441,12 @@ class AdCraftPipeline:
                         "product looks like. For example, 'gold bangles' should show BANGLES (circular wrist "
                         "jewelry), NOT earrings or necklaces. Describe the exact product shape, style, and appearance.\n"
                         "2. Show the product PROMINENTLY and ACCURATELY in the center of the image.\n"
-                        "3. Include text overlay elements: headline text, brand name, CTA button, price if provided.\n"
-                        "4. Use professional ad layout with clean typography and composition.\n"
-                        "5. Describe lighting, backdrop, and mood appropriate for the product category.\n\n"
+                        "3. Include text overlay elements: headline text (with CORRECT spelling), brand name (accurate spelling), "
+                        "price if provided. NO CTA buttons, NO 'Shop Now' buttons, NO 'Buy Now' buttons, NO action buttons.\n"
+                        "4. Use ultra-professional magazine-style ad layout with sophisticated typography and premium composition.\n"
+                        "5. Describe lighting, backdrop, and mood appropriate for the product category.\n"
+                        "6. CRITICAL: Ensure all text in the image has ACCURATE SPELLING with NO TYPOS. "
+                        "7. Use natural photographic backgrounds or elegant gradients — NO solid poster-style backgrounds.\n\n"
                         "Output ONLY the image generation prompt (4-6 sentences), nothing else."
                     ),
                     user_prompt=(
@@ -452,20 +455,22 @@ class AdCraftPipeline:
                         f"User request: {query}\n"
                         + (f"Scene: {scene_desc}\n" if scene_desc else "")
                         + f"\nText overlay elements:\n"
-                        f"- Headline: \"{pre_headline}\"\n"
-                        f"- Brand: \"{brand_clean}\"\n"
-                        f"- CTA Button: \"{pre_cta}\"\n"
-                        + (f"- Tagline: \"{pre_tagline}\"\n" if pre_tagline else "")
+                        f"- Headline: \"{pre_headline}\" (spell EXACTLY as written)\n"
+                        f"- Brand: \"{brand_clean}\" (spell EXACTLY as written)\n"
+                        + (f"- Tagline: \"{pre_tagline}\" (spell EXACTLY as written)\n" if pre_tagline else "")
                         + (f"- Price: \"{price_text}\"\n" if price_text else "")
-                        + f"\nGenerate an image prompt that shows the EXACT product accurately with ad layout."
+                        + f"\nIMPORTANT: Do NOT include any CTA buttons, 'Shop Now', 'Buy Now', or action buttons in the image.\n"
+                        + f"Generate an image prompt that shows the EXACT product accurately with premium ad layout, "
+                        + f"natural backgrounds (no solid poster colors), and text spelled EXACTLY as provided above."
                     ),
                 )
                 if ai_prompt and len(ai_prompt) > 50:
                     diffusion_prompt = (
                         f"{ai_prompt.strip()}, "
-                        f"professional advertisement, product photography, "
-                        f"accurate product depiction, clean typography, "
-                        f"8k, high quality, commercial ad poster"
+                        f"ultra-professional magazine advertisement, premium product photography, "
+                        f"accurate product depiction, sophisticated typography with correct spelling, "
+                        f"natural backgrounds, no CTA buttons, no solid poster backgrounds, "
+                        f"8k, highest quality, luxury commercial photography"
                     )
                     print(f"  [AI-PROMPT] SUCCESS - Ad prompt generated ({len(diffusion_prompt)} chars)")
                     print(f"  [AI-PROMPT] Prompt: {diffusion_prompt[:200]}...")
@@ -476,18 +481,19 @@ class AdCraftPipeline:
                 # Structured fallback with specific product description
                 features_text = ", ".join(pre_features) if pre_features else ""
                 diffusion_prompt = (
-                    f"Professional advertisement poster for {brand_clean}. "
+                    f"Ultra-professional magazine advertisement for {brand_clean}. "
                     f"A stunning photograph of {product_detail_str} shown prominently in the center. "
                     + (f"Scene: {scene_desc}. " if scene_desc else
-                       f"Elegant studio lighting, luxurious backdrop. ")
-                    + f"Bold headline text \"{pre_headline}\" at the top. "
-                    f"Brand name \"{brand_clean}\" displayed clearly. "
-                    + (f"Tagline \"{pre_tagline}\". " if pre_tagline else "")
-                    + (f"Price \"{price_text}\" shown. " if price_text else "")
+                       f"Elegant studio lighting, sophisticated backdrop. ")
+                    + f"Elegant headline text \"{pre_headline}\" with accurate spelling at the top. "
+                    f"Brand name \"{brand_clean}\" displayed clearly with correct spelling. "
+                    + (f"Tagline \"{pre_tagline}\" spelled correctly. " if pre_tagline else "")
+                    + (f"Price \"{price_text}\" shown elegantly. " if price_text else "")
                     + (f"Key features: {features_text}. " if features_text else "")
-                    + f"CTA button \"{pre_cta}\" at the bottom. "
-                    f"Professional graphic design, clean modern typography, "
-                    f"accurate product depiction, 8k quality, commercial ad layout."
+                    + f"NO CTA buttons, NO 'Shop Now' or 'Buy Now' buttons, NO action buttons. "
+                    f"Premium magazine-style design, sophisticated modern typography with accurate spelling, "
+                    f"natural backgrounds without solid poster colors, precise product depiction, "
+                    f"8k quality, luxury commercial photography layout."
                 )
 
             # Reuse the pre-generated text content (already generated above for the image prompt)

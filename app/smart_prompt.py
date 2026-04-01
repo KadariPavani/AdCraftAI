@@ -1266,10 +1266,12 @@ class SmartPromptParser:
         style = style_hints.get(category, "professional product photography, clean layout")
 
         rich = (
-            f"Professional advertisement poster for {product_desc}. "
+            f"Ultra-professional creative advertisement for {product_desc}. "
             f"{style}. "
-            f"Bold headline text, prominent brand name, 'Shop Now' CTA button, "
-            f"key features displayed with modern typography and professional layout. "
+            f"Elegant headline text with accurate spelling, prominent brand name displayed clearly, "
+            f"key features shown with sophisticated typography and premium magazine-style layout. "
+            f"High-end commercial photography, no CTA buttons, no 'buy now' or action buttons, "
+            f"clean and minimalist design without solid poster backgrounds. "
             f"{original_prompt}"
         )
         print(f"    [SMART-PROMPT] Local rich prompt built ({len(rich)} chars)")
