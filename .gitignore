@@ -59,19 +59,18 @@ Thumbs.db
 *.sqlite3
 *.db
 
-# Project-specific large/generated folders (ignore by default)
-data/
+# Project-specific large/generated folders
+# Dataset images are large (~18 GB) — downloaded at runtime in Docker
+data/images/
 outputs/
-embeddings/
-processed/
 products_db/
 uploads/
 
-# FAISS / index files
-embeddings/faiss_indexes/
-data/indices/
-*.index
-*.idx
-*.faiss
+# Keep these tracked (required for deployment):
+# data/annotations/  — annotation JSON files (~12 MB)
+# data/indices/       — statistics files
+# embeddings/         — FAISS index + metadata (~410 MB)
+# processed/          — metadata CSV (~12 MB)
 
-# Keep track of source and small config files only — remove entries above if you need to commit
+# Large binary files (use Git LFS for these if pushing to HF Spaces)
+# embeddings/image_embeddings.pkl  — uncomment if too large for git

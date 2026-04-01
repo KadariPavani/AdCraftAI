@@ -1,0 +1,46 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Git
+.git/
+.gitignore
+
+# IDE / editor
+.vscode/
+.idea/
+.claude/
+*.code-workspace
+
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment / secrets
+.env
+.env.*
+
+# Documentation (not needed in container)
+*.docx
+*.md
+!README.md
+!data/annotations/dataset_readme.md
+
+# Runtime / generated data (will be created at runtime)
+outputs/
+uploads/
+products_db/
+
+# Dataset images (downloaded at runtime from Zenodo)
+data/images/
+
+# Logs
+*.log

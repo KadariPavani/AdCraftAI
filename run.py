@@ -23,13 +23,15 @@ def main():
         os.system(f"{sys.executable} -m pip install fastapi uvicorn[standard] python-multipart deep-translator")
         import uvicorn
 
+    port = int(os.environ.get("PORT", 8000))
+
     print()
     print("=" * 55)
     print("  AdCraft AI - Ad Generation Platform")
     print("=" * 55)
     print()
-    print("  Open in browser: http://localhost:8000")
-    print("  API docs:        http://localhost:8000/docs")
+    print(f"  Open in browser: http://localhost:{port}")
+    print(f"  API docs:        http://localhost:{port}/docs")
     print()
     print("  Press Ctrl+C to stop the server")
     print("=" * 55)
@@ -38,7 +40,7 @@ def main():
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=False,
         log_level="info",
         access_log=False,

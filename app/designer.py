@@ -3,10 +3,125 @@
 # dataset reference images — not from hardcoded category-to-theme mappings.
 
 import math
+import os
+import platform
 import random
 import numpy as np
 from typing import Dict, List
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+
+
+# ---------------------------------------------------------------------------
+# Cross-platform font resolution (Windows vs Linux/Docker)
+# ---------------------------------------------------------------------------
+def _is_windows():
+    return platform.system() == "Windows"
+
+
+def _get_latin_fonts():
+    if _is_windows():
+        return {
+            "headline": "C:/Windows/Fonts/segoeuib.ttf",
+            "body": "C:/Windows/Fonts/segoeui.ttf",
+            "accent": "C:/Windows/Fonts/georgiai.ttf",
+            "display": "C:/Windows/Fonts/impact.ttf",
+            "elegant": "C:/Windows/Fonts/times.ttf",
+            "modern": "C:/Windows/Fonts/calibri.ttf",
+        }
+    else:
+        # Linux / Docker — uses fonts installed via:
+        #   apt-get install fonts-dejavu-core fonts-dejavu-extra
+        _dj = "/usr/share/fonts/truetype/dejavu"
+        return {
+            "headline": f"{_dj}/DejaVuSans-Bold.ttf",
+            "body": f"{_dj}/DejaVuSans.ttf",
+            "accent": f"{_dj}/DejaVuSerif-Italic.ttf",
+            "display": f"{_dj}/DejaVuSans-Bold.ttf",
+            "elegant": f"{_dj}/DejaVuSerif.ttf",
+            "modern": f"{_dj}/DejaVuSans.ttf",
+        }
+
+
+def _get_indic_fonts():
+    if _is_windows():
+        return {
+            "headline": ("C:/Windows/Fonts/Nirmala.ttc", 1),
+            "body": ("C:/Windows/Fonts/Nirmala.ttc", 0),
+            "accent": ("C:/Windows/Fonts/Nirmala.ttc", 0),
+            "display": ("C:/Windows/Fonts/Nirmala.ttc", 1),
+            "elegant": ("C:/Windows/Fonts/Nirmala.ttc", 0),
+            "modern": ("C:/Windows/Fonts/Nirmala.ttc", 0),
+        }
+    else:
+        _noto = "/usr/share/fonts/truetype/noto"
+        _bold = f"{_noto}/NotoSansDevanagari-Bold.ttf"
+        _regular = f"{_noto}/NotoSansDevanagari-Regular.ttf"
+        # Fallback to DejaVu if Noto not available
+        if not os.path.exists(_bold):
+            _bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            _regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        return {
+            "headline": _bold,
+            "body": _regular,
+            "accent": _regular,
+            "display": _bold,
+            "elegant": _regular,
+            "modern": _regular,
+        }
+
+
+def _get_cjk_fonts():
+    if _is_windows():
+        return {
+            "headline": ("C:/Windows/Fonts/msyhbd.ttc", 0),
+            "body": ("C:/Windows/Fonts/msyh.ttc", 0),
+            "accent": ("C:/Windows/Fonts/msyh.ttc", 0),
+            "display": ("C:/Windows/Fonts/msyhbd.ttc", 0),
+            "elegant": ("C:/Windows/Fonts/msyh.ttc", 0),
+            "modern": ("C:/Windows/Fonts/msyh.ttc", 0),
+        }
+    else:
+        _noto = "/usr/share/fonts/truetype/noto"
+        _bold = f"{_noto}/NotoSansCJK-Bold.ttc"
+        _regular = f"{_noto}/NotoSansCJK-Regular.ttc"
+        if not os.path.exists(_bold):
+            _bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            _regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        return {
+            "headline": (_bold, 0),
+            "body": (_regular, 0),
+            "accent": (_regular, 0),
+            "display": (_bold, 0),
+            "elegant": (_regular, 0),
+            "modern": (_regular, 0),
+        }
+
+
+def _get_arabic_fonts():
+    if _is_windows():
+        return {
+            "headline": "C:/Windows/Fonts/segoeuib.ttf",
+            "body": "C:/Windows/Fonts/segoeui.ttf",
+            "accent": "C:/Windows/Fonts/segoeui.ttf",
+            "display": "C:/Windows/Fonts/segoeuib.ttf",
+            "elegant": "C:/Windows/Fonts/segoeui.ttf",
+            "modern": "C:/Windows/Fonts/segoeui.ttf",
+        }
+    else:
+        _noto = "/usr/share/fonts/truetype/noto"
+        _bold = f"{_noto}/NotoSansArabic-Bold.ttf"
+        _regular = f"{_noto}/NotoSansArabic-Regular.ttf"
+        if not os.path.exists(_bold):
+            _bold = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            _regular = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        return {
+            "headline": _bold,
+            "body": _regular,
+            "accent": _regular,
+            "display": _bold,
+            "elegant": _regular,
+            "modern": _regular,
+        }
 
 
 class ProAdDesigner:
@@ -17,42 +132,12 @@ class ProAdDesigner:
     WIDTH = 1080
     HEIGHT = 1080
 
-    FONTS = {
-        "headline": "C:/Windows/Fonts/segoeuib.ttf",
-        "body": "C:/Windows/Fonts/segoeui.ttf",
-        "accent": "C:/Windows/Fonts/georgiai.ttf",
-        "display": "C:/Windows/Fonts/impact.ttf",
-        "elegant": "C:/Windows/Fonts/times.ttf",
-        "modern": "C:/Windows/Fonts/calibri.ttf",
-    }
+    FONTS = _get_latin_fonts()
 
-    # Fonts for non-Latin scripts — (path, ttc_index) tuples for .ttc collections
-    INDIC_FONTS = {
-        "headline": ("C:/Windows/Fonts/Nirmala.ttc", 1),   # Nirmala UI Bold
-        "body": ("C:/Windows/Fonts/Nirmala.ttc", 0),        # Nirmala UI Regular
-        "accent": ("C:/Windows/Fonts/Nirmala.ttc", 0),
-        "display": ("C:/Windows/Fonts/Nirmala.ttc", 1),
-        "elegant": ("C:/Windows/Fonts/Nirmala.ttc", 0),
-        "modern": ("C:/Windows/Fonts/Nirmala.ttc", 0),
-    }
-
-    CJK_FONTS = {
-        "headline": ("C:/Windows/Fonts/msyhbd.ttc", 0),   # Microsoft YaHei Bold
-        "body": ("C:/Windows/Fonts/msyh.ttc", 0),          # Microsoft YaHei
-        "accent": ("C:/Windows/Fonts/msyh.ttc", 0),
-        "display": ("C:/Windows/Fonts/msyhbd.ttc", 0),
-        "elegant": ("C:/Windows/Fonts/msyh.ttc", 0),
-        "modern": ("C:/Windows/Fonts/msyh.ttc", 0),
-    }
-
-    ARABIC_FONTS = {
-        "headline": "C:/Windows/Fonts/segoeuib.ttf",
-        "body": "C:/Windows/Fonts/segoeui.ttf",
-        "accent": "C:/Windows/Fonts/segoeui.ttf",
-        "display": "C:/Windows/Fonts/segoeuib.ttf",
-        "elegant": "C:/Windows/Fonts/segoeui.ttf",
-        "modern": "C:/Windows/Fonts/segoeui.ttf",
-    }
+    # Fonts for non-Latin scripts
+    INDIC_FONTS = _get_indic_fonts()
+    CJK_FONTS = _get_cjk_fonts()
+    ARABIC_FONTS = _get_arabic_fonts()
 
     THEMES = [
         "minimal_clean", "bold_hero", "premium_dark",

@@ -1,3 +1,15 @@
+---
+title: MAdVerse AdCraft AI
+emoji: 🎨
+colorFrom: purple
+colorTo: blue
+sdk: docker
+app_port: 7860
+pinned: false
+license: cc-by-nc-4.0
+short_description: AI-powered ad generation from 50K+ real ads dataset
+---
+
 # MAdVerse: Dataset-Driven Ad Generation Pipeline
 
 A Retrieval-Augmented Generation (RAG) pipeline that generates professional ad creatives by analyzing 61,576 real advertisement images across 492 brands and 12 categories. Every design decision — colors, features, visual style, layout theme, and image prompt — is derived from the retrieved reference ads in the dataset, not from hardcoded templates.
@@ -300,4 +312,359 @@ fastapi, uvicorn          # Web server
 Pillow, opencv-python     # Image processing
 deep-translator           # Multi-language support
 scikit-learn              # KMeans clustering
+```
+
+---
+
+## Docker Deployment
+
+The project is fully containerized and optimized for production deployment.
+
+### Build the Docker Image
+
+```bash
+# Build image locally
+docker build -t madverse:latest .
+
+# Or build with a specific tag for versioning
+docker build -t madverse:v1.0 .
+```
+
+**Build Details:**
+- Base image: `python:3.11-slim` (optimized, minimal size)
+- Optimizations:
+  - PyTorch CPU-only (no CUDA requirement on cloud platforms)
+  - Pre-built FAISS index included (no build-time compilation needed)
+  - All system dependencies pre-installed (fonts, image libraries, download tools)
+  - Health check enabled for orchestrators (Kubernetes, Docker Swarm, etc.)
+
+### Run Locally
+
+#### Basic Usage (Port 7860)
+```bash
+docker run -p 7860:7860 madverse:latest
+```
+Access at **http://localhost:7860**
+
+#### With Volume Mounts (Preserve Data)
+```bash
+docker run -p 7860:7860 \
+  -v ${PWD}/data:/app/data \
+  -v ${PWD}/outputs:/app/outputs \
+  -v ${PWD}/embeddings:/app/embeddings \
+  -v ${PWD}/products_db:/app/products_db \
+  madverse:latest
+```
+
+**Volume Mapping:**
+- `/app/data` — Dataset annotations and indices (required)
+- `/app/embeddings` — Pre-built FAISS index (required)
+- `/app/outputs` — Generated ads (optional, auto-created)
+- `/app/products_db` — SQLite product catalog (optional, auto-created)
+- `/app/uploads` — User uploads (optional, auto-created)
+
+#### Interactive Mode (Debugging)
+```bash
+docker run -it -p 7860:7860 \
+  -v ${PWD}:/app \
+  madverse:latest /bin/bash
+```
+
+#### Custom Command Execution
+```bash
+# Run a specific pipeline step
+docker run -v ${PWD}:/app madverse:latest python DatasetLoad.py
+
+# Generate embeddings (long-running)
+docker run -v ${PWD}:/app madverse:latest python GenerateEmbeddings.py
+
+# Build FAISS index
+docker run -v ${PWD}:/app madverse:latest python BuildFAISS.py
+```
+
+### Docker Compose (Multi-Container Setup)
+
+Create a `docker-compose.yml` file:
+
+```yaml
+version: '3.8'
+
+services:
+  madverse:
+    build: .
+    container_name: madverse-app
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./data:/app/data
+      - ./embeddings:/app/embeddings
+      - ./outputs:/app/outputs
+      - ./products_db:/app/products_db
+      - ./uploads:/app/uploads
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/api/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+```
+
+**Run with Docker Compose:**
+```bash
+# Start MAdVerse
+docker-compose up -d
+
+# View logs
+docker-compose logs -f madverse
+
+# Stop the application
+docker-compose down
+```
+
+### Container Environment Variables
+
+You can customize behavior via environment variables:
+
+```bash
+docker run \
+  -e PYTHONUNBUFFERED=1 \
+  -e PIP_NO_CACHE_DIR=1 \
+  -p 7860:7860 \
+  madverse:latest
+```
+
+### Health Check Status
+
+The container includes a health check endpoint:
+
+```bash
+# Check container health
+docker exec <container_id> curl http://localhost:7860/api/health
+
+# Or check via Docker API
+docker inspect <container_id> | grep -A 5 "Health"
+```
+
+### Production Deployment
+
+#### Kubernetes Deployment (HF Spaces Compatible)
+
+Create `k8s-deployment.yaml`:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: madverse
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: madverse
+  template:
+    metadata:
+      labels:
+        app: madverse
+    spec:
+      containers:
+      - name: madverse
+        image: madverse:latest
+        ports:
+        - containerPort: 7860
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        - name: embeddings
+          mountPath: /app/embeddings
+        - name: outputs
+          mountPath: /app/outputs
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 7860
+          initialDelaySeconds: 120
+          periodSeconds: 60
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 7860
+          initialDelaySeconds: 60
+          periodSeconds: 10
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: madverse-data-pvc
+      - name: embeddings
+        persistentVolumeClaim:
+          claimName: madverse-embeddings-pvc
+      - name: outputs
+        emptyDir: {}
+```
+
+#### Hugging Face Spaces Deployment
+
+The Dockerfile is already optimized for HF Spaces:
+
+1. Rename to `Dockerfile` (already done) ✓
+2. Push to GitHub repository with `render.yaml` (already present) ✓
+3. Create new Space on [huggingface.co/spaces](https://huggingface.co/spaces)
+4. Connect GitHub repo → HF Spaces auto-deploys
+5. Expose port `7860` (configured in Dockerfile) ✓
+
+#### Docker Hub / Registry Deployment
+
+```bash
+# Login to Docker Hub
+docker login
+
+# Tag image for registry
+docker tag madverse:latest <your-username>/madverse:latest
+
+# Push to Docker Hub
+docker push <your-username>/madverse:latest
+
+# Or use GitHub Container Registry
+docker tag madverse:latest ghcr.io/<username>/madverse:latest
+docker push ghcr.io/<username>/madverse:latest
+```
+
+### Docker Container Management
+
+**View running containers:**
+```bash
+docker ps
+docker ps -a  # Include stopped containers
+```
+
+**Access container logs:**
+```bash
+docker logs <container_id>
+docker logs -f <container_id>  # Follow logs in real-time
+docker logs --tail 50 <container_id>  # Last 50 lines
+```
+
+**Execute commands in running container:**
+```bash
+docker exec -it <container_id> bash
+docker exec <container_id> python -c "import torch; print(torch.__version__)"
+```
+
+**Stop a container:**
+```bash
+docker stop <container_id>
+docker kill <container_id>  # Force stop
+```
+
+**Remove container/image:**
+```bash
+docker rm <container_id>  # Remove container
+docker rmi madverse:latest  # Remove image
+docker system prune  # Clean up unused images/containers
+```
+
+**Container resource limits:**
+```bash
+docker run \
+  -p 7860:7860 \
+  --memory 4g \
+  --cpus 2 \
+  madverse:latest
+```
+
+### Troubleshooting
+
+**Container won't start:**
+```bash
+docker run madverse:latest  # Check error output
+docker logs <container_id>  # View logs
+```
+
+**Port already in use:**
+```bash
+# Use different port
+docker run -p 8080:7860 madverse:latest
+# Or find process using port
+netstat -tlnp | grep 7860  # Linux/Mac
+netstat -ano | findstr 7860  # Windows
+```
+
+**Out of memory:**
+```bash
+# Increase memory limit
+docker run --memory 8g -p 7860:7860 madverse:latest
+```
+
+**Volume permission errors:**
+```bash
+# On Linux, ensure directory ownership
+sudo chown -R $USER:$USER ./data ./outputs ./embeddings
+```
+
+---
+
+## End-to-End Workflow
+
+### Local Development
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Create/load datasets and build indexes (one-time)
+python DatasetLoad.py
+python GenerateEmbeddings.py
+python BuildFAISS.py
+
+# 3. Run web server
+python run.py  # http://localhost:8000
+```
+
+### Docker Local Testing
+```bash
+# 1. Build image
+docker build -t madverse:latest .
+
+# 2. Run with volumes
+docker run -p 7860:7860 \
+  -v ${PWD}/data:/app/data \
+  -v ${PWD}/embeddings:/app/embeddings \
+  -v ${PWD}/outputs:/app/outputs \
+  madverse:latest
+
+# 3. Access web UI
+# http://localhost:7860
+```
+
+### Production Deployment (Hugging Face Spaces)
+```bash
+# 1. Push code to GitHub
+git add .
+git commit -m "Dockerize MAdVerse"
+git push origin main
+
+# 2. Create HF Space
+# Visit huggingface.co/spaces → New Space
+# Select "Docker" → Connect GitHub
+# Auto-deploys on push
+
+# 3. Access deployed app
+# https://huggingface.co/spaces/<username>/<space-name>
+```
+
+### Production Deployment (Kubernetes)
+```bash
+# 1. Build and push to registry
+docker build -t <registry>/madverse:v1.0 .
+docker push <registry>/madverse:v1.0
+
+# 2. Apply Kubernetes manifests
+kubectl apply -f k8s-deployment.yaml
+kubectl apply -f k8s-pvc.yaml
+
+# 3. Verify deployment
+kubectl rollout status deployment/madverse
+kubectl get pods
+kubectl logs deployment/madverse
 ```
