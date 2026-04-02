@@ -342,9 +342,25 @@ docker build -t madverse:v1.0 .
 
 #### Basic Usage (Port 7860)
 ```bash
-docker run -p 7860:7860 madverse:latest
+docker run -p 7860:7860 \
+  -v madverse_hf_cache:/app/.cache/huggingface \
+  madverse:latest
 ```
 Access at **http://localhost:7860**
+
+#### Same Behavior As Local Host (Recommended)
+Use your local `.env`, local product DB, and persistent HF cache so Docker output matches local runs:
+
+```bash
+docker run --rm -it -p 7860:7860 \
+  --env-file .env \
+  -v ${PWD}/products_db:/app/products_db \
+  -v ${PWD}/outputs:/app/outputs \
+  -v ${PWD}/uploads:/app/uploads \
+  -v madverse_hf_cache:/app/.cache/huggingface \
+  -v madverse_data:/app/data \
+  adcraftai python -m uvicorn app.main:app --host 0.0.0.0 --port 7860
+```
 
 #### With Volume Mounts (Preserve Data)
 ```bash
@@ -353,6 +369,7 @@ docker run -p 7860:7860 \
   -v ${PWD}/outputs:/app/outputs \
   -v ${PWD}/embeddings:/app/embeddings \
   -v ${PWD}/products_db:/app/products_db \
+  -v madverse_hf_cache:/app/.cache/huggingface \
   madverse:latest
 ```
 
@@ -362,6 +379,7 @@ docker run -p 7860:7860 \
 - `/app/outputs` — Generated ads (optional, auto-created)
 - `/app/products_db` — SQLite product catalog (optional, auto-created)
 - `/app/uploads` — User uploads (optional, auto-created)
+- `/app/.cache/huggingface` — Transformers/HF model cache (recommended, prevents repeated downloads)
 
 #### Interactive Mode (Debugging)
 ```bash
@@ -432,8 +450,39 @@ You can customize behavior via environment variables:
 docker run \
   -e PYTHONUNBUFFERED=1 \
   -e PIP_NO_CACHE_DIR=1 \
+  -e MADVERSE_DB_PATH=/app/products_db/adcraft.db \
   -p 7860:7860 \
   madverse:latest
+```
+
+Database-related environment variables:
+- `MADVERSE_DB_DIR` - directory for SQLite DB (default: `/app/products_db`)
+- `MADVERSE_DB_PATH` - full SQLite file path (overrides `MADVERSE_DB_DIR`)
+- `MADVERSE_RESET_DB_ON_START=1` - delete DB file on startup (useful for clearing stale Docker volume data)
+
+#### Fix: Docker Shows Old Product Count
+
+If Docker shows many products (for example `492`) while local shows only your records, the container is reading an old named volume.
+
+Use one of these fixes:
+
+```bash
+# Option 1 (recommended): use project bind mount for DB
+docker run --rm -it -p 7860:7860 \
+  -v ${PWD}/products_db:/app/products_db \
+  madverse:latest
+
+# Option 2: clear existing named volume DB once
+docker run --rm -it -p 7860:7860 \
+  -e MADVERSE_RESET_DB_ON_START=1 \
+  -v madverse_db:/app/products_db \
+  madverse:latest
+```
+
+To fully remove stale named volume data:
+
+```bash
+docker volume rm madverse_db
 ```
 
 ### Health Check Status

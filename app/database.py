@@ -1,9 +1,11 @@
 # SQLite product catalog and analytics storage.
 
 import json
+import os
 import sqlite3
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional
 
 from app.models import DB_DIR
@@ -11,7 +13,9 @@ from app.models import DB_DIR
 
 class Database:
     def __init__(self):
-        self.db_path = DB_DIR / "adcraft.db"
+        db_path_override = os.getenv("MADVERSE_DB_PATH")
+        self.db_path = Path(db_path_override).resolve() if db_path_override else (DB_DIR / "adcraft.db")
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         print(f"    [DATABASE] Initializing SQLite database: {self.db_path}")
         self._init_db()
         print(f"    [DATABASE] Tables ready: products, generated_content, clicks")

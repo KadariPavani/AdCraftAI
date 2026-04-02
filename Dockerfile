@@ -9,7 +9,10 @@ FROM python:3.11-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HF_HOME=/app/.cache/huggingface \
+    TRANSFORMERS_CACHE=/app/.cache/huggingface/transformers \
+    HUGGINGFACE_HUB_CACHE=/app/.cache/huggingface/hub
 
 # ── System dependencies ─────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -64,18 +67,22 @@ COPY data/indices/ ./data/indices/
 
 # ── Copy startup script ─────────────────────────────────────
 COPY scripts/start.sh /start.sh
-RUN chmod +x /start.sh
+# Fix Windows line endings (CRLF -> LF) and remove BOM
+RUN sed -i 's/\r$//' /start.sh && \
+    sed -i '1s/^\xEF\xBB\xBF//' /start.sh && \
+    chmod +x /start.sh
 
 # ── Create runtime directories ──────────────────────────────
-RUN mkdir -p /app/outputs /app/uploads /app/products_db /app/data/images
+RUN mkdir -p /app/outputs /app/uploads /app/products_db /app/data/images /app/.cache/huggingface
 
 # ── Expose port ─────────────────────────────────────────────
-# HF Spaces uses port 7860 by default
-EXPOSE 7860
+# HF Spaces uses port 7860 by default, local dev uses 8000
+EXPOSE 7860 8000
 
 # ── Health check ─────────────────────────────────────────────
+# Checks PORT env var, defaults to 7860 for HF Spaces
 HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
-    CMD curl -f http://localhost:7860/api/health || exit 1
+    CMD curl -f http://localhost:${PORT:-7860}/api/health || exit 1
 
 # ── Start ────────────────────────────────────────────────────
 CMD ["/start.sh"]

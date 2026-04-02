@@ -1,5 +1,6 @@
 # Shared data classes, constants, and path configuration for AdCraft AI.
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -15,7 +16,7 @@ EMBEDDINGS_DIR = BASE_DIR / "embeddings"
 FAISS_DIR = EMBEDDINGS_DIR / "faiss_indexes"
 OUTPUT_DIR = BASE_DIR / "outputs"
 UPLOAD_DIR = BASE_DIR / "uploads"
-DB_DIR = BASE_DIR / "products_db"
+DB_DIR = Path(os.getenv("MADVERSE_DB_DIR", str(BASE_DIR / "products_db"))).resolve()
 
 OUTPUT_DIR.mkdir(exist_ok=True)
 UPLOAD_DIR.mkdir(exist_ok=True)
