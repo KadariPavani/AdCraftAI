@@ -3,15 +3,42 @@
 
 ---
 
+## ⚠️ **CRITICAL: Git LFS Required!**
+
+**This repository uses Git LFS for large files (FAISS index, embeddings).**  
+**Without Git LFS, you'll get errors like: `Pipeline error: key < ntotal failed`**
+
+### **Install Git LFS First (One-Time Setup):**
+
+**Windows:**
+1. Download from: https://git-lfs.github.com/
+2. Run installer
+3. Open terminal and run: `git lfs install`
+
+**Linux:**
+```bash
+sudo apt-get install git-lfs
+git lfs install
+```
+
+**Mac:**
+```bash
+brew install git-lfs
+git lfs install
+```
+
+---
+
 ## 📋 **Prerequisites**
 
+- ✅ **Git LFS installed** (see above)
 - ✅ Docker Desktop installed (Windows/Mac/Linux)
 - ✅ Git installed
 - ✅ Internet connection
 
 ---
 
-## 🎯 **Quick Start (5 Steps)**
+## 🎯 **Quick Start (6 Steps)**
 
 ### **Step 1: Clone the Repository**
 
@@ -22,7 +49,24 @@ cd MAdVerse
 
 ---
 
-### **Step 2: Create `.env` File**
+### **Step 2: Verify Git LFS Files**
+
+**IMPORTANT:** Run this validation script before building Docker:
+
+```bash
+python scripts/check_faiss.py
+```
+
+**If you see errors about "Git LFS pointer files":**
+```bash
+git lfs install
+git lfs pull
+python scripts/check_faiss.py  # Check again - should show "ALL CHECKS PASSED"
+```
+
+---
+
+### **Step 3: Create `.env` File**
 
 The `.env` file goes in the **root directory** (same level as `docker-compose.yml`).
 
@@ -46,7 +90,7 @@ MAdVerse/
 
 ---
 
-### **Step 3: Add API Keys to `.env`**
+### **Step 4: Add API Keys to `.env`**
 
 Open `.env` and add your keys:
 
@@ -67,7 +111,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
 ---
 
-### **Step 4: Get Free API Keys**
+### **Step 5: Get Free API Keys**
 
 #### **1. HuggingFace Token (HF_TOKEN)** - For Image Generation
 
@@ -106,7 +150,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
 ---
 
-### **Step 5: Run with Docker**
+### **Step 6: Run with Docker**
 
 ```bash
 # Start the application
@@ -178,6 +222,28 @@ ANTHROPIC_API_KEY=sk-ant-1234567890abcdefghijklmnopqrstuvwxyz
 ---
 
 ## 🔍 **Troubleshooting**
+
+### **Problem: "Pipeline error: key < ntotal failed" or "FAISS index error"**
+
+**Cause:** Git LFS files not downloaded (you have pointer files instead of actual data)
+
+**Solution:**
+```bash
+# Step 1: Install Git LFS
+git lfs install
+
+# Step 2: Pull large files
+git lfs pull
+
+# Step 3: Verify files are correct
+python scripts/check_faiss.py
+
+# Step 4: Rebuild Docker (important!)
+docker-compose down
+docker-compose up -d --build
+```
+
+---
 
 ### **Problem: "HF_TOKEN: NOT SET"**
 
@@ -294,12 +360,15 @@ MAdVerse/
 
 ## 🎯 **Complete Setup Checklist**
 
+- [ ] Install Git LFS (`git lfs install`)
 - [ ] Clone repository
+- [ ] Pull LFS files (`git lfs pull`)
+- [ ] **Run validation:** `python scripts/check_faiss.py` → Should show "ALL CHECKS PASSED" ✅
 - [ ] Create `.env` file in root directory
 - [ ] Get HF_TOKEN from HuggingFace
 - [ ] Get GOOGLE_API_KEY from Google AI Studio
 - [ ] Add keys to `.env` file
-- [ ] Run `docker-compose up -d`
+- [ ] Run `docker-compose up -d --build`
 - [ ] Wait 5-10 minutes (first time only)
 - [ ] Check logs: `docker-compose logs -f`
 - [ ] Open http://localhost:8000
@@ -310,22 +379,32 @@ MAdVerse/
 ## 🚀 **Summary - Commands to Run**
 
 ```bash
+# 0. Install Git LFS (one-time)
+git lfs install
+
 # 1. Clone
 git clone https://github.com/YOUR_USERNAME/MAdVerse.git
 cd MAdVerse
 
-# 2. Create .env
+# 2. Pull large files
+git lfs pull
+
+# 3. Verify setup (IMPORTANT!)
+python scripts/check_faiss.py
+# Should show: "✓ ALL CHECKS PASSED!"
+
+# 4. Create .env
 copy .env.example .env
 notepad .env
 # Add your API keys and save
 
-# 3. Start Docker
-docker-compose up -d
+# 5. Start Docker
+docker-compose up -d --build
 
-# 4. Wait and watch logs
+# 6. Wait and watch logs
 docker-compose logs -f
 
-# 5. Access when ready
+# 7. Access when ready
 # http://localhost:8000
 ```
 

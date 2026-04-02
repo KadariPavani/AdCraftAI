@@ -65,12 +65,16 @@ COPY processed/ ./processed/
 # Data indices
 COPY data/indices/ ./data/indices/
 
-# ── Copy startup script ─────────────────────────────────────
+# ── Copy startup scripts ────────────────────────────────────
 COPY scripts/start.sh /start.sh
+COPY scripts/docker-entrypoint.sh /docker-entrypoint.sh
+COPY scripts/check_faiss.py ./scripts/check_faiss.py
 # Fix Windows line endings (CRLF -> LF) and remove BOM
 RUN sed -i 's/\r$//' /start.sh && \
     sed -i '1s/^\xEF\xBB\xBF//' /start.sh && \
-    chmod +x /start.sh
+    sed -i 's/\r$//' /docker-entrypoint.sh && \
+    sed -i '1s/^\xEF\xBB\xBF//' /docker-entrypoint.sh && \
+    chmod +x /start.sh /docker-entrypoint.sh
 
 # ── Create runtime directories ──────────────────────────────
 RUN mkdir -p /app/outputs /app/uploads /app/products_db /app/data/images /app/.cache/huggingface
@@ -85,4 +89,6 @@ HEALTHCHECK --interval=60s --timeout=10s --start-period=120s --retries=3 \
     CMD curl -f http://localhost:${PORT:-7860}/api/health || exit 1
 
 # ── Start ────────────────────────────────────────────────────
+# Use entrypoint for validation, then CMD for actual startup
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/start.sh"]

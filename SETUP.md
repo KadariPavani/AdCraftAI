@@ -1,26 +1,70 @@
 # 🎯 Quick Setup - New Users Start Here!
 
+## ⚠️ **IMPORTANT: Git LFS Required!**
+
+This repository uses **Git LFS** (Large File Storage) for embeddings and FAISS index files.
+**You must install Git LFS before cloning** or the app won't work!
+
+### **Install Git LFS First:**
+
+```bash
+# Windows (download installer)
+# Visit: https://git-lfs.github.com/
+
+# Linux
+sudo apt-get install git-lfs
+
+# Mac
+brew install git-lfs
+
+# After installing, run this once:
+git lfs install
+```
+
+---
+
 ## 📦 **Just Cloned This Repo? Follow These Steps:**
 
-### **1. Create `.env` file in project root**
+### **1. Clone with Git LFS**
+```bash
+git clone https://github.com/YOUR_USERNAME/MAdVerse.git
+cd MAdVerse
+
+# If you already cloned without Git LFS, pull the files now:
+git lfs pull
+```
+
+### **2. Validate Setup (IMPORTANT!)**
+```bash
+python scripts/check_faiss.py
+```
+
+If you see errors about "Git LFS pointer files", run:
+```bash
+git lfs install
+git lfs pull
+python scripts/check_faiss.py  # Check again
+```
+
+### **3. Create `.env` file in project root**
 ```bash
 copy .env.example .env
 notepad .env
 ```
 
-### **2. Add your FREE API keys to `.env`:**
+### **4. Add your FREE API keys to `.env`:**
 
 ```env
 HF_TOKEN=hf_your_token_here                    # Get from https://huggingface.co/settings/tokens
 GOOGLE_API_KEY=AIza_your_key_here             # Get from https://aistudio.google.com/apikey
 ```
 
-### **3. Run with Docker:**
+### **5. Run with Docker:**
 ```bash
 docker-compose up -d
 ```
 
-### **4. Access:**
+### **6. Access:**
 ```
 http://localhost:8000
 ```
@@ -67,10 +111,29 @@ Wait 5 minutes on first run (downloads AI models), then open http://localhost:80
 
 | Problem | Solution |
 |---------|----------|
+| **"FAISS index error: key < ntotal failed"** | **Git LFS files not downloaded!** Run: `git lfs install && git lfs pull && docker-compose up -d --build` |
 | "HF_TOKEN: NOT SET" | Add `HF_TOKEN=hf_xxx` to `.env` file |
 | Poor image quality | Missing HF_TOKEN in `.env` |
-| Container crashes | Check `docker-compose logs` |
+| Container crashes | Check `docker-compose logs` for errors |
 | Port 8000 in use | Stop other apps or change port in `docker-compose.yml` |
+| "Pipeline error" on generation | Run `python scripts/check_faiss.py` to validate setup |
+
+---
+
+## 🔍 **Validation Checklist**
+
+Before reporting issues, run:
+
+```bash
+# 1. Check if Git LFS files are downloaded
+python scripts/check_faiss.py
+
+# 2. Check Docker logs
+docker-compose logs -f
+
+# 3. Test health endpoint
+curl http://localhost:8000/api/health
+```
 
 ---
 

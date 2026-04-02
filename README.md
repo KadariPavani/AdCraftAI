@@ -1,719 +1,224 @@
----
-title: MAdVerse AdCraft AI
-emoji: 🎨
-colorFrom: purple
-colorTo: blue
-sdk: docker
-app_port: 7860
-pinned: false
-license: cc-by-nc-4.0
-short_description: AI-powered ad generation from 50K+ real ads dataset
----
+# AdCraft AI
 
-# MAdVerse: Dataset-Driven Ad Generation Pipeline
+> **⚠️ IMPORTANT:** This repository requires **Git LFS**. Install it before cloning:  
+> `git lfs install` → [Installation Guide](https://git-lfs.github.com/)  
+> **Having issues?** See [QUICK_FIX_FAISS.md](QUICK_FIX_FAISS.md)
 
-A Retrieval-Augmented Generation (RAG) pipeline that generates professional ad creatives by analyzing 61,576 real advertisement images across 492 brands and 12 categories. Every design decision — colors, features, visual style, layout theme, and image prompt — is derived from the retrieved reference ads in the dataset, not from hardcoded templates.
+AdCraft AI is a dataset-driven ad generation platform. It turns a product prompt and optional image into a polished ad creative, then lets you save, share, and track it through a public product hub.
 
----
+## What it does
 
-## How It Works
+- Generate ad creatives from text prompts and optional images
+- Parse free-form product descriptions into structured fields
+- Generate product descriptions and multi-language captions
+- Enhance uploaded images
+- Save generated ads as products
+- Share products through public hub pages
+- Track engagement per platform
+- Browse dataset stats, categories, and supported languages
 
-```
-User Query
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Stage 0: Brand Matching                                        │
-│  Fuzzy-match query against 492 known brands (difflib)           │
-│  → Identifies brand, category, subcategory                      │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Stage 1: RAG Retrieval (CLIP + FAISS)                          │
-│  Query → 512-D CLIP embedding → FAISS search (61,576 vectors)  │
-│  Brand-filtered sub-index when brand is matched                 │
-│  → Top 5 most similar real ads from the dataset                 │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-    ┌───────────────────────┼───────────────────────┐
-    ▼                       ▼                       ▼
-┌──────────────┐  ┌──────────────────┐  ┌──────────────────────┐
-│ Stage 2:     │  │ Stage 3:         │  │ Stage 3 (cont):      │
-│ Color        │  │ AI Content       │  │ Prompt Generation     │
-│ Extraction   │  │ Generation       │  │                       │
-│              │  │                  │  │ CLIP ranks styles,    │
-│ KMeans on    │  │ Pollinations AI  │  │ moods, and subjects   │
-│ pixels from  │  │ generates ALL    │  │ against the reference │
-│ the 5        │  │ ad text:         │  │ images to build an    │
-│ retrieved    │  │                  │  │ image generation      │
-│ ads →        │  │ • headline       │  │ prompt                │
-│ accent,      │  │ • tagline        │  │                       │
-│ secondary,   │  │ • features       │  │ AI-enhanced via       │
-│ background   │  │ • CTA text       │  │ Pollinations text API │
-│ tint         │  │ • descriptions   │  │                       │
-│              │  │ • captions       │  │                       │
-└──────┬───────┘  └────────┬─────────┘  └──────────┬────────────┘
-       │                   │                       │
-       └───────────────────┼───────────────────────┘
-                           │
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Stage 4: Image Generation                                      │
-│  Pollinations FLUX → HuggingFace FLUX.1-schnell → gradient     │
-│  Prompt is built from reference image analysis, not templates   │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Stage 5: Multi-Language Translation                            │
-│  25+ languages via deep_translator (GoogleTranslator)           │
-│  Translates title, description, captions, CTA, features        │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  Stage 6: Ad Composition                                        │
-│  Theme selected by analyzing reference ad brightness,           │
-│  saturation, and complexity — not by category lookup             │
-│  Colors from Stage 2, features from Stage 3                     │
-│  Bilingual text rendering, multi-script font support            │
-│  → 1080×1080 PNG output                                         │
-└─────────────────────────────────────────────────────────────────┘
-```
+## Main URLs
 
----
+- App: `http://localhost:8000`
+- API docs: `http://localhost:8000/docs`
+- Health: `http://localhost:8000/api/health`
+- Dataset explorer: `http://localhost:8000/dataset`
 
-## Dataset-Driven Design + AI-Generated Text
+## Project layout
 
-The pipeline uses the dataset for visual design and Pollinations AI for ALL text content:
+- `app/main.py` - FastAPI routes and HTML pages
+- `app/pipeline.py` - Ad generation pipeline
+- `app/smart_prompt.py` - Prompt parsing and field extraction
+- `app/database.py` - SQLite product storage and analytics
+- `app/image_gen.py` - Image generation with fallbacks
+- `app/content_gen.py` - Text generation, translation, and enhancement
+- `app/designer.py` - Layout composition
+- `app/static/` - Frontend pages
+- `data/annotations/` - Dataset metadata
+- `embeddings/` - Prebuilt embeddings and search index
+- `processed/` - Processed metadata
+- `outputs/` - Generated creatives
+- `uploads/` - User uploads
+- `products_db/` - Local SQLite database
+- `run.py` - Local server launcher
+- `docker-compose.yml` - Docker Compose config
+- `Dockerfile` - Container build
 
-- **Colors** — KMeans clustering extracts dominant colors from the top 5 retrieved ads. The accent color is chosen by saturation/brightness scoring on those pixels, not from a predefined palette.
-- **All Ad Text is AI-Generated** — Headline, tagline, product features, CTA button text, descriptions, captions, and hashtags are all generated by Pollinations AI based on the brand, category, and user query. No hardcoded marketing copy, no template strings, no predefined feature pools.
-- **Image Prompt** — CLIP ranks candidate styles (lighting, setting), moods (energetic, elegant), and subjects against the reference images. The highest-scoring descriptors are combined into the diffusion prompt, then enhanced by Pollinations AI.
-- **Theme Selection** — The designer analyzes the reference ad images for average brightness, saturation, and edge complexity, then weights theme probabilities accordingly (dark ads → premium/bold themes, light ads → clean/minimal themes).
+## Environment variables
 
----
+Create a `.env` file in the project root.
 
-## Project Structure
+Required for best results:
 
-```
-MAdVerse/
-├── app/
-│   ├── __init__.py           # Package marker
-│   ├── main.py               # FastAPI backend (API endpoints)
-│   ├── pipeline.py           # Pipeline orchestrator (wires all modules)
-│   ├── models.py             # Data classes, constants, path config
-│   ├── brands.py             # Brand taglines + fuzzy brand matcher
-│   ├── colors.py             # KMeans dominant color extraction from reference ads
-│   ├── logo.py               # Multi-source logo fetcher (free APIs)
-│   ├── clip_extract.py       # CLIP feature extraction + prompt generation from reference images
-│   ├── image_gen.py          # Image generation (Pollinations/HF/gradient)
-│   ├── content_gen.py        # Text generation, translation, image enhancement
-│   ├── smart_prompt.py       # Smart prompt parser (field extraction, category detection)
-│   ├── designer.py           # Ad designer (6 themes, reference-driven selection)
-│   ├── database.py           # SQLite product catalog + analytics
-│   └── static/
-│       └── index.html        # Web frontend UI
-├── data/
-│   ├── annotations/          # JSON metadata (13 MB)
-│   └── images/               # 61,576 ad images (~35 GB)
-│       ├── Advert_Gallery/   # Newspaper ads (brand-organized)
-│       ├── OnlineAds/        # Web scraped ads (hierarchical)
-│       ├── Epaper1/          # Multilingual newspaper ads (8 languages)
-│       └── Epaper2/          # Multilingual newspaper ads (10 languages)
-├── embeddings/
-│   ├── image_embeddings.pkl  # CLIP embeddings (281 MB)
-│   └── faiss_indexes/        # FAISS index + metadata (130 MB)
-├── processed/
-│   └── metadata/
-│       └── madverse_metadata.csv  # Dataset metadata (61,592 rows)
-├── outputs/                  # Generated ads (auto-created)
-├── uploads/                  # User uploads (auto-created)
-├── products_db/              # SQLite product catalog (auto-created)
-├── DatasetLoad.py            # Step 1: Scan images → metadata CSV
-├── GenerateEmbeddings.py     # Step 2: Images → CLIP embeddings
-├── BuildFAISS.py             # Step 3: Embeddings → FAISS index
-├── run.py                    # Launch the web app
-└── requirements.txt          # Python dependencies
-```
+- `HF_TOKEN` - Hugging Face token for higher quality image generation
+- `GOOGLE_API_KEY` - Gemini text generation
 
----
+Optional:
 
-## Quick Start
+- `GROQ_API_KEY`
+- `TOGETHER_API_KEY`
+- `ANTHROPIC_API_KEY`
+- `PORT` - defaults to `8000` locally
+
+## Local setup after clone
+
+**⚠️ IMPORTANT: Git LFS is required for this repository!**
+
+**→ Quick Start: [QUICKSTART.md](QUICKSTART.md) (5 steps)**  
+**→ Full Guide: [COMPLETE_SETUP_COMMANDS.md](COMPLETE_SETUP_COMMANDS.md)**
 
 ```bash
-# 1. Install dependencies
-pip install -r requirements.txt
+# Quick version (copy-paste):
+git lfs install
+git clone <your-repo-url>
+cd <repo-folder>
+git lfs pull
+python scripts/check_faiss.py  # Validate
+copy .env.example .env
+# Edit .env, add API keys, then:
+docker-compose up -d --build
+```
 
-# 2. Launch the web app
+Open `http://localhost:8000`.
+
+### Without Docker (Local Python):
+
+```bash
+# After git lfs pull and creating .env:
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # Linux/Mac
+pip install -r requirements.txt
 python run.py
 ```
 
-Open **http://localhost:8000** in your browser.
+## Local setup notes
 
-> No API keys required — the pipeline uses free services (Pollinations.ai, deep_translator).
+- The app loads environment variables from `.env`
+- The server runs on port `8000` by default
+- If `HF_TOKEN` is missing, image generation falls back to simpler output
+- The app creates runtime folders automatically if they do not exist
+- `outputs/`, `uploads/`, and `products_db/` are persistent local folders
 
----
-
-## One-Time Setup (Index Building)
-
-Only needed if rebuilding from scratch. Pre-built indexes are included.
-
-**Step 1** — `python DatasetLoad.py`
-- Scans 4 source folders (Advert_Gallery, OnlineAds, Epaper1, Epaper2)
-- Extracts category/subcategory/brand from JSON annotations
-- Outputs: `processed/metadata/madverse_metadata.csv` (61,592 rows, 492 brands)
-
-**Step 2** — `python GenerateEmbeddings.py`
-- Loads all 61,576 images through CLIP (`openai/clip-vit-base-patch32`)
-- Generates L2-normalized 512-D embeddings per image
-- Outputs: `embeddings/image_embeddings.pkl` (281 MB)
-- Includes checkpoint system for resuming interrupted runs
-
-**Step 3** — `python BuildFAISS.py`
-- Loads embeddings, builds FAISS `IndexFlatL2(512)` index
-- Outputs: `embeddings/faiss_indexes/madverse_index.faiss` + `id_to_metadata.pkl`
-
----
-
-## Smart Prompt Parser
-
-The Smart Prompt Parser extracts structured product catalog data from free-text descriptions in **<50ms** with zero API calls. It powers the Step 1 "Analyze" flow in the UI.
-
-### How It Works
-
-1. **Scene masking** — Extracts scene descriptions ("show an Indian bride at luxury showroom") first, preventing scene elements from being misidentified as the product
-2. **Brand detection** — 150+ known brands with category hints (longest-match-first, word-boundary matching), dataset fuzzy matcher, and CamelCase heuristic for unknown brands
-3. **Product type detection** — 150+ product types across 9 categories, globally sorted by length for accurate matching ("water purifier" matches before "water")
-4. **Field extraction** — Regex patterns for price, size, color, material, features, audience, occasion, weight, flavor, warranty, and more
-5. **Category inference** — Weighted keyword scoring + brand-category knowledge map
-6. **AI enhancement** — Optional Pollinations AI toggle for complex/ambiguous prompts
-
-### Example Prompts
-
-**Known Brands:**
-
-| Category | Example Prompt |
-|----------|---------------|
-| Footwear | `Nike Air Max 90 men's running shoes, sizes UK 7-12, black/white/infrared colorway, mesh and leather upper, visible Air unit, price Rs 12,995, lightweight 300g, ideal for running and casual wear` |
-| Electronics | `Samsung Galaxy S24 Ultra smartphone, 6.8 inch Dynamic AMOLED display, 200MP camera, Snapdragon 8 Gen 3, 12GB RAM, 256GB storage, 5000mAh battery, titanium frame, price Rs 1,29,999` |
-| Jewelry | `Kalyan Jewellers Tejasvi collection 22K gold bangles set of 4, weight 40 grams, Rs 1,80,000 - 2,50,000, intricate filigree work, BIS hallmarked, for women, sizes 2.4 to 2.8, wedding, show an Indian bride in red silk saree at luxury showroom` |
-| Beverages | `Bisleri mineral water 1 liter bottle, 10+2 international quality tests, pH balanced, zero calories, available in 250ml 500ml 1L 2L packs` |
-
-**New / Unknown Brands (works with same accuracy):**
-
-| Category | Example Prompt |
-|----------|---------------|
-| Footwear | `StrideFlex AeroGlide running shoes for men, lightweight mesh upper, breathable cushioning, UK 7-12, black and neon green, Rs 5499, ideal for sports` |
-| Electronics | `NovaTech Pulse X1 wireless earbuds with 50hr battery life, active noise cancellation, Bluetooth 5.4, IPX7 waterproof, USB-C fast charging, Rs 3999` |
-| Personal Care | `DermaCure vitamin C brightening face wash with niacinamide and salicylic acid, for oily skin, paraben free, 150ml, Rs 449, for men and women` |
-| Jewelry | `RaniGold bridal choker necklace set 22k gold with uncut polki diamonds, kundan work, BIS hallmarked, for women, wedding, 85 grams, Rs 3,50,000` |
-| Automotive | `VoltRider Storm 200 electric motorcycle, 150km range, 8kW motor, dual disc brakes, matte black, Rs 1,85,000, show rider on open highway at sunset` |
-| Food | `CrunchBox quinoa puffs 120g pack, tangy tomato flavor, baked not fried, high protein, gluten free, Rs 99` |
-| Clothing | `ThreadCraft heritage cotton kurta set for men, festive wear, embroidered Chikankari style, sizes S M L XL, cream and gold, Rs 2899` |
-| Beverages | `PureZen green tea with jasmine and honey flavor, 25 tea bags pack, antioxidant rich, zero calories, Rs 349` |
-| Home Appliances | `BreezeCool Glacier 1.5 ton 5 star inverter split air conditioner, copper condenser, Wi-Fi enabled, 2 year warranty, white, Rs 38999` |
-
----
-
-## Web App Features
-
-The FastAPI web application (`run.py`) provides:
-
-- **Ad Generation** — Text prompt + optional image → full ad creative with dataset-driven design
-- **Save & Share** — One-click save generated ads as products with shareable hub pages
-- **Social Media Sharing** — Share across 8 platforms: WhatsApp, Instagram, Facebook, X (Twitter), LinkedIn, Telegram, Pinterest, Email
-- **Product Catalog** — CRUD operations for managing products
-- **Image Enhancement** — Brightness, contrast, sharpness adjustments
-- **Multi-Language Captions** — 25+ languages via deep_translator
-- **Shareable Hub Pages** — Public product pages with analytics tracking
-- **Engagement Analytics** — Track clicks and shares by platform
-
-### API Endpoints
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/generate` | POST | Generate ad from text + optional image |
-| `/api/save-generated` | POST | Save generated ad as product with all content |
-| `/api/products` | GET/POST | Product catalog CRUD |
-| `/api/products/{id}` | GET/DELETE | Product details / delete |
-| `/api/products/{id}/generate` | POST | Generate for existing product |
-| `/api/enhance` | POST | Image enhancement |
-| `/api/describe` | POST | Generate product description |
-| `/api/captions` | POST | Multi-language caption generation |
-| `/api/parse-prompt` | POST | Smart prompt parsing (extract product fields from text) |
-| `/api/validate-fields` | POST | Validate and merge additional fields into parsed data |
-| `/api/categories` | GET | List all supported product categories with fields |
-| `/api/stats` | GET | Pipeline statistics |
-| `/api/languages` | GET | Supported languages list |
-| `/hub/{product_id}` | GET | Public shareable product page |
-| `/api/track/{product_id}` | POST | Track social share clicks by platform |
-| `/api/analytics/{product_id}` | GET | Get engagement analytics |
-
----
-
-## Pipeline Stages
-
-### Stage 0 — Brand Matching
-Fuzzy-matches query text against 492 known brands using `difflib`. Identifies the target brand for filtered FAISS retrieval. Confidence scoring on single words, word pairs, and word triplets.
-
-### Stage 1 — RAG Retrieval (CLIP + FAISS)
-Encodes query text into a 512-D CLIP embedding and searches the FAISS index (61,576 vectors). When a brand is matched, a sub-index is built from only that brand's images for precise retrieval. Returns the top 5 most similar real ads.
-
-### Stage 2 — Color Extraction
-Extracts dominant colors via KMeans clustering on the pixel data of the 5 retrieved reference ads. Selects accent and secondary colors by saturation/brightness scoring. These colors drive the entire ad design — background, buttons, accents, gradients.
-
-### Stage 3 — AI Content Generation + Prompt Generation
-All ad text is generated by Pollinations AI in a single JSON call:
-- **Headline** — Short catchy headline (3-6 words), unique to the product
-- **Tagline** — Brand slogan generated for this specific ad
-- **Features** — 4-6 product-specific benefit phrases
-- **CTA** — Action-oriented call-to-action button text
-- **Descriptions & Captions** — Product description, Instagram caption, WhatsApp copy, hashtags
-
-For image generation, CLIP ranks candidate styles, moods, and subjects against the retrieved reference images, then Pollinations AI enhances the prompt.
-
-### Stage 4 — Image Generation
-Three-tier fallback: Pollinations FLUX → HuggingFace Inference (FLUX.1-schnell) → gradient fallback using extracted colors. The prompt is constructed from Stage 3's reference image analysis.
-
-### Stage 5 — Multi-Language Translation
-Translates all content (title, description, captions, CTA, features) into 25+ languages using `deep_translator.GoogleTranslator`. Supports bilingual ad rendering with primary + secondary language text.
-
-### Stage 6 — Ad Composition
-The designer analyzes the reference ad images (brightness, saturation, complexity) to select from 6 layout themes:
-- `minimal_clean` — Product hero top, wave divider, centered text
-- `bold_hero` — Product top, dark bottom, bold uppercase headline
-- `premium_dark` — Gradient fade, elegant centered typography
-- `split_layout` — Product left, text right on accent background
-- `card_float` — Product top, wave divider, accent-colored text area
-- `gradient_mesh` — Vibrant mesh gradient below product image
-
-All colors come from Stage 2, all features from Stage 3. Theme selection is driven by analyzing the visual properties of the retrieved reference ads — no category-to-theme lookup tables.
-
-Output: 1080×1080 PNG with multi-script font support (Latin, Indic, CJK, Arabic).
-
----
-
-## Requirements
-
-- Python 3.10+
-- CUDA-capable GPU (recommended for CLIP embedding generation only)
-- MAdVerse dataset (61,576 ad images with JSON annotations)
-- No API keys needed — uses free Pollinations.ai services
-
-### Key Dependencies
-
-```
-torch, torchvision       # PyTorch (CLIP model)
-transformers              # HuggingFace (CLIP)
-faiss-cpu                 # Vector search
-fastapi, uvicorn          # Web server
-Pillow, opencv-python     # Image processing
-deep-translator           # Multi-language support
-scikit-learn              # KMeans clustering
-```
-
----
-
-## Docker Deployment
-
-The project is fully containerized and optimized for production deployment.
-
-### Build the Docker Image
+## Docker setup after clone
 
 ```bash
-# Build image locally
-docker build -t madverse:latest .
-
-# Or build with a specific tag for versioning
-docker build -t madverse:v1.0 .
+git clone <your-repo-url>
+cd <repo-folder>
+copy .env.example .env
+docker-compose up -d --build
 ```
 
-**Build Details:**
-- Base image: `python:3.11-slim` (optimized, minimal size)
-- Optimizations:
-  - PyTorch CPU-only (no CUDA requirement on cloud platforms)
-  - Pre-built FAISS index included (no build-time compilation needed)
-  - All system dependencies pre-installed (fonts, image libraries, download tools)
-  - Health check enabled for orchestrators (Kubernetes, Docker Swarm, etc.)
+Open:
 
-### Run Locally
+- `http://localhost:8000`
+- `http://localhost:8000/docs`
 
-#### Basic Usage (Port 7860)
-```bash
-docker run -p 7860:7860 \
-  -v madverse_hf_cache:/app/.cache/huggingface \
-  madverse:latest
-```
-Access at **http://localhost:7860**
-
-#### Same Behavior As Local Host (Recommended)
-Use your local `.env`, local product DB, and persistent HF cache so Docker output matches local runs:
+Stop Docker:
 
 ```bash
-docker run --rm -it -p 7860:7860 \
-  --env-file .env \
-  -v ${PWD}/products_db:/app/products_db \
-  -v ${PWD}/outputs:/app/outputs \
-  -v ${PWD}/uploads:/app/uploads \
-  -v madverse_hf_cache:/app/.cache/huggingface \
-  -v madverse_data:/app/data \
-  adcraftai python -m uvicorn app.main:app --host 0.0.0.0 --port 7860
-```
-
-#### With Volume Mounts (Preserve Data)
-```bash
-docker run -p 7860:7860 \
-  -v ${PWD}/data:/app/data \
-  -v ${PWD}/outputs:/app/outputs \
-  -v ${PWD}/embeddings:/app/embeddings \
-  -v ${PWD}/products_db:/app/products_db \
-  -v madverse_hf_cache:/app/.cache/huggingface \
-  madverse:latest
-```
-
-**Volume Mapping:**
-- `/app/data` — Dataset annotations and indices (required)
-- `/app/embeddings` — Pre-built FAISS index (required)
-- `/app/outputs` — Generated ads (optional, auto-created)
-- `/app/products_db` — SQLite product catalog (optional, auto-created)
-- `/app/uploads` — User uploads (optional, auto-created)
-- `/app/.cache/huggingface` — Transformers/HF model cache (recommended, prevents repeated downloads)
-
-#### Interactive Mode (Debugging)
-```bash
-docker run -it -p 7860:7860 \
-  -v ${PWD}:/app \
-  madverse:latest /bin/bash
-```
-
-#### Custom Command Execution
-```bash
-# Run a specific pipeline step
-docker run -v ${PWD}:/app madverse:latest python DatasetLoad.py
-
-# Generate embeddings (long-running)
-docker run -v ${PWD}:/app madverse:latest python GenerateEmbeddings.py
-
-# Build FAISS index
-docker run -v ${PWD}:/app madverse:latest python BuildFAISS.py
-```
-
-### Docker Compose (Multi-Container Setup)
-
-Create a `docker-compose.yml` file:
-
-```yaml
-version: '3.8'
-
-services:
-  madverse:
-    build: .
-    container_name: madverse-app
-    ports:
-      - "7860:7860"
-    volumes:
-      - ./data:/app/data
-      - ./embeddings:/app/embeddings
-      - ./outputs:/app/outputs
-      - ./products_db:/app/products_db
-      - ./uploads:/app/uploads
-    environment:
-      - PYTHONUNBUFFERED=1
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7860/api/health"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-    restart: unless-stopped
-```
-
-**Run with Docker Compose:**
-```bash
-# Start MAdVerse
-docker-compose up -d
-
-# View logs
-docker-compose logs -f madverse
-
-# Stop the application
 docker-compose down
 ```
 
-### Container Environment Variables
-
-You can customize behavior via environment variables:
+View logs:
 
 ```bash
-docker run \
-  -e PYTHONUNBUFFERED=1 \
-  -e PIP_NO_CACHE_DIR=1 \
-  -e MADVERSE_DB_PATH=/app/products_db/adcraft.db \
-  -p 7860:7860 \
-  madverse:latest
+docker-compose logs -f
 ```
 
-Database-related environment variables:
-- `MADVERSE_DB_DIR` - directory for SQLite DB (default: `/app/products_db`)
-- `MADVERSE_DB_PATH` - full SQLite file path (overrides `MADVERSE_DB_DIR`)
-- `MADVERSE_RESET_DB_ON_START=1` - delete DB file on startup (useful for clearing stale Docker volume data)
+## Docker behavior
 
-#### Fix: Docker Shows Old Product Count
+- The container reads `.env`
+- `PORT=8000` is set in Compose
+- `SKIP_DATASET_DOWNLOAD=1` is used so the app starts without downloading the original image archive
+- `products_db/`, `outputs/`, and `uploads/` are mounted for persistence
+- Health check hits `/api/health`
+- Restart policy is `unless-stopped`
 
-If Docker shows many products (for example `492`) while local shows only your records, the container is reading an old named volume.
+## API surface
 
-Use one of these fixes:
+### Pages
+
+- `GET /` - main UI
+- `GET /dataset` - dataset explorer
+- `GET /hub/{product_id}` - public product hub
+
+### Core API
+
+- `GET /api/health`
+- `GET /api/languages`
+- `GET /api/stats`
+- `GET /api/dataset-summary`
+- `GET /api/category-fields`
+- `GET /api/categories`
+- `POST /api/parse-prompt`
+- `POST /api/validate-fields`
+- `POST /api/generate`
+- `POST /api/save-generated`
+- `POST /api/products`
+- `GET /api/products`
+- `GET /api/products/{product_id}`
+- `DELETE /api/products/{product_id}`
+- `POST /api/products/{product_id}/generate`
+- `POST /api/enhance`
+- `POST /api/describe`
+- `POST /api/captions`
+- `POST /api/track/{product_id}`
+- `GET /api/analytics/{product_id}`
+
+## Supported generation flow
+
+1. Parse the prompt and detect product fields
+2. Retrieve relevant dataset references
+3. Build ad copy and captions
+4. Compose the visual creative
+5. Save the result as a product if needed
+6. Share the product through the hub page
+
+## Supported content
+
+- Product title
+- Product description
+- Instagram caption
+- WhatsApp copy
+- Hashtags
+- Multi-language translations
+- Shareable public page
+- Engagement tracking by platform
+
+## Generated and runtime folders
+
+These folders are part of normal runtime behavior and should stay in the repo:
+
+- `embeddings/`
+- `processed/`
+- `data/annotations/`
+
+These are generated at runtime:
+
+- `outputs/`
+- `uploads/`
+- `products_db/`
+
+## Common issues
+
+| Problem | Fix |
+|---|---|
+| **FAISS index error** | Git LFS files not downloaded. Run: `git lfs install && git lfs pull` then rebuild Docker |
+| App does not start | Check `.env` and install dependencies |
+| Image quality is weak | Add `HF_TOKEN` |
+| Text generation is limited | Add `GOOGLE_API_KEY` or another optional key |
+| Port already in use | Stop the other process or change `PORT` |
+| Docker restart loop | Check `docker-compose logs` |
+
+**To validate your setup:** `python scripts/check_faiss.py`
+
+## Quick commands
 
 ```bash
-# Option 1 (recommended): use project bind mount for DB
-docker run --rm -it -p 7860:7860 \
-  -v ${PWD}/products_db:/app/products_db \
-  madverse:latest
-
-# Option 2: clear existing named volume DB once
-docker run --rm -it -p 7860:7860 \
-  -e MADVERSE_RESET_DB_ON_START=1 \
-  -v madverse_db:/app/products_db \
-  madverse:latest
+python run.py
+docker-compose up -d --build
+docker-compose logs -f
+docker-compose down
 ```
 
-To fully remove stale named volume data:
-
-```bash
-docker volume rm madverse_db
-```
-
-### Health Check Status
-
-The container includes a health check endpoint:
-
-```bash
-# Check container health
-docker exec <container_id> curl http://localhost:7860/api/health
-
-# Or check via Docker API
-docker inspect <container_id> | grep -A 5 "Health"
-```
-
-### Production Deployment
-
-#### Kubernetes Deployment (HF Spaces Compatible)
-
-Create `k8s-deployment.yaml`:
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: madverse
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: madverse
-  template:
-    metadata:
-      labels:
-        app: madverse
-    spec:
-      containers:
-      - name: madverse
-        image: madverse:latest
-        ports:
-        - containerPort: 7860
-        volumeMounts:
-        - name: data
-          mountPath: /app/data
-        - name: embeddings
-          mountPath: /app/embeddings
-        - name: outputs
-          mountPath: /app/outputs
-        livenessProbe:
-          httpGet:
-            path: /api/health
-            port: 7860
-          initialDelaySeconds: 120
-          periodSeconds: 60
-        readinessProbe:
-          httpGet:
-            path: /api/health
-            port: 7860
-          initialDelaySeconds: 60
-          periodSeconds: 10
-      volumes:
-      - name: data
-        persistentVolumeClaim:
-          claimName: madverse-data-pvc
-      - name: embeddings
-        persistentVolumeClaim:
-          claimName: madverse-embeddings-pvc
-      - name: outputs
-        emptyDir: {}
-```
-
-#### Hugging Face Spaces Deployment
-
-The Dockerfile is already optimized for HF Spaces:
-
-1. Rename to `Dockerfile` (already done) ✓
-2. Push to GitHub repository with `render.yaml` (already present) ✓
-3. Create new Space on [huggingface.co/spaces](https://huggingface.co/spaces)
-4. Connect GitHub repo → HF Spaces auto-deploys
-5. Expose port `7860` (configured in Dockerfile) ✓
-
-#### Docker Hub / Registry Deployment
-
-```bash
-# Login to Docker Hub
-docker login
-
-# Tag image for registry
-docker tag madverse:latest <your-username>/madverse:latest
-
-# Push to Docker Hub
-docker push <your-username>/madverse:latest
-
-# Or use GitHub Container Registry
-docker tag madverse:latest ghcr.io/<username>/madverse:latest
-docker push ghcr.io/<username>/madverse:latest
-```
-
-### Docker Container Management
-
-**View running containers:**
-```bash
-docker ps
-docker ps -a  # Include stopped containers
-```
-
-**Access container logs:**
-```bash
-docker logs <container_id>
-docker logs -f <container_id>  # Follow logs in real-time
-docker logs --tail 50 <container_id>  # Last 50 lines
-```
-
-**Execute commands in running container:**
-```bash
-docker exec -it <container_id> bash
-docker exec <container_id> python -c "import torch; print(torch.__version__)"
-```
-
-**Stop a container:**
-```bash
-docker stop <container_id>
-docker kill <container_id>  # Force stop
-```
-
-**Remove container/image:**
-```bash
-docker rm <container_id>  # Remove container
-docker rmi madverse:latest  # Remove image
-docker system prune  # Clean up unused images/containers
-```
-
-**Container resource limits:**
-```bash
-docker run \
-  -p 7860:7860 \
-  --memory 4g \
-  --cpus 2 \
-  madverse:latest
-```
-
-### Troubleshooting
-
-**Container won't start:**
-```bash
-docker run madverse:latest  # Check error output
-docker logs <container_id>  # View logs
-```
-
-**Port already in use:**
-```bash
-# Use different port
-docker run -p 8080:7860 madverse:latest
-# Or find process using port
-netstat -tlnp | grep 7860  # Linux/Mac
-netstat -ano | findstr 7860  # Windows
-```
-
-**Out of memory:**
-```bash
-# Increase memory limit
-docker run --memory 8g -p 7860:7860 madverse:latest
-```
-
-**Volume permission errors:**
-```bash
-# On Linux, ensure directory ownership
-sudo chown -R $USER:$USER ./data ./outputs ./embeddings
-```
-
----
-
-## End-to-End Workflow
-
-### Local Development
-```bash
-# 1. Install dependencies
-pip install -r requirements.txt
-
-# 2. Create/load datasets and build indexes (one-time)
-python DatasetLoad.py
-python GenerateEmbeddings.py
-python BuildFAISS.py
-
-# 3. Run web server
-python run.py  # http://localhost:8000
-```
-
-### Docker Local Testing
-```bash
-# 1. Build image
-docker build -t madverse:latest .
-
-# 2. Run with volumes
-docker run -p 7860:7860 \
-  -v ${PWD}/data:/app/data \
-  -v ${PWD}/embeddings:/app/embeddings \
-  -v ${PWD}/outputs:/app/outputs \
-  madverse:latest
-
-# 3. Access web UI
-# http://localhost:7860
-```
-
-### Production Deployment (Hugging Face Spaces)
-```bash
-# 1. Push code to GitHub
-git add .
-git commit -m "Dockerize MAdVerse"
-git push origin main
-
-# 2. Create HF Space
-# Visit huggingface.co/spaces → New Space
-# Select "Docker" → Connect GitHub
-# Auto-deploys on push
-
-# 3. Access deployed app
-# https://huggingface.co/spaces/<username>/<space-name>
-```
-
-### Production Deployment (Kubernetes)
-```bash
-# 1. Build and push to registry
-docker build -t <registry>/madverse:v1.0 .
-docker push <registry>/madverse:v1.0
-
-# 2. Apply Kubernetes manifests
-kubectl apply -f k8s-deployment.yaml
-kubectl apply -f k8s-pvc.yaml
-
-# 3. Verify deployment
-kubectl rollout status deployment/madverse
-kubectl get pods
-kubectl logs deployment/madverse
-```
