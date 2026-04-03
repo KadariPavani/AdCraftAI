@@ -52,10 +52,21 @@
                     <svg class="w-5 h-5 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                     <span class="font-bold text-gray-900 text-base tracking-tight">AdCraft AI</span>
                 </div>
-                <div class="flex items-center space-x-1">
+                <div class="hidden sm:flex items-center space-x-1">
                     <button onclick="showPage('dashboard')" class="tab-btn text-sm" id="nav-dashboard">Dashboard</button>
                     <button onclick="showPage('generate')" class="tab-btn text-sm" id="nav-generate">Generate</button>
                     <button onclick="showPage('products')" class="tab-btn text-sm" id="nav-products">Products</button>
+                </div>
+                <div class="flex sm:hidden items-center space-x-1">
+                    <button onclick="showPage('dashboard')" class="tab-btn p-2" id="nav-dashboard-mobile" aria-label="Dashboard" title="Dashboard">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l9-9 9 9M5 10v10h6v-6h2v6h6V10"/></svg>
+                    </button>
+                    <button onclick="showPage('generate')" class="tab-btn p-2" id="nav-generate-mobile" aria-label="Generate" title="Generate">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    </button>
+                    <button onclick="showPage('products')" class="tab-btn p-2" id="nav-products-mobile" aria-label="Products" title="Products">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                    </button>
                 </div>
             </div>
         </div>
@@ -607,8 +618,26 @@ Example: Nike Air Max 90 running shoes for men, sizes UK 7-12, black and white c
             if (el) { el.classList.remove('hidden'); el.classList.add('fade-in'); }
             const nav = document.getElementById('nav-' + page);
             if (nav) nav.classList.add('active');
+            const navMobile = document.getElementById('nav-' + page + '-mobile');
+            if (navMobile) navMobile.classList.add('active');
             if (page === 'products') loadProducts();
             if (page === 'dashboard') init();
+        }
+
+        function toPublicUrl(pathOrUrl) {
+            if (!pathOrUrl) return '';
+            if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://') || pathOrUrl.startsWith('/file?path=')) {
+                return pathOrUrl;
+            }
+            return `/file?path=${pathOrUrl}`;
+        }
+
+        function toStorageValue(pathOrUrl) {
+            if (!pathOrUrl) return '';
+            if (pathOrUrl.startsWith('/file?path=')) {
+                return decodeURIComponent(pathOrUrl.replace('/file?path=', ''));
+            }
+            return pathOrUrl;
         }
 
         // ===== Wizard Step Navigation =====
@@ -1007,9 +1036,10 @@ Example: Nike Air Max 90 running shoes for men, sizes UK 7-12, black and white c
 
         function displayResult(data) {
             // Pamphlet
-            if (data.pamphlet_url) {
-                document.getElementById('pamphletImage').src = data.pamphlet_url;
-                document.getElementById('downloadPamphlet').href = data.pamphlet_url;
+            const pamphletUrl = toPublicUrl(data.pamphlet_url);
+            if (pamphletUrl) {
+                document.getElementById('pamphletImage').src = pamphletUrl;
+                document.getElementById('downloadPamphlet').href = pamphletUrl;
             }
 
             // Language tabs
@@ -1176,7 +1206,7 @@ Example: Nike Air Max 90 running shoes for men, sizes UK 7-12, black and white c
 
                 const detail = document.getElementById('productDetailContent');
                 const c = (content.length > 0 && content[0].content_json) ? content[0].content_json : {};
-                const pamphletUrl = (content.length > 0 && content[0].pamphlet_path) ? '/file?path=' + content[0].pamphlet_path : '';
+                const pamphletUrl = (content.length > 0 && content[0].pamphlet_path) ? toPublicUrl(content[0].pamphlet_path) : '';
 
                 detail.innerHTML = `
                     <!-- Product Header -->
@@ -1350,14 +1380,12 @@ Example: Nike Air Max 90 running shoes for men, sizes UK 7-12, black and white c
                 formData.append('content_json', JSON.stringify(fullContent));
                 formData.append('languages_generated', (currentResult.languages_generated || ['en']).join(','));
 
-                // Extract actual file paths from URLs (remove /file?path= prefix)
+                // Preserve Cloudinary URLs; strip /file?path= only for local files
                 if (currentResult.pamphlet_url) {
-                    const pamphletPath = currentResult.pamphlet_url.replace('/file?path=', '');
-                    formData.append('pamphlet_path', decodeURIComponent(pamphletPath));
+                    formData.append('pamphlet_path', toStorageValue(currentResult.pamphlet_url));
                 }
                 if (currentResult.product_image_url) {
-                    const imgPath = currentResult.product_image_url.replace('/file?path=', '');
-                    formData.append('product_image_path', decodeURIComponent(imgPath));
+                    formData.append('product_image_path', toStorageValue(currentResult.product_image_url));
                 }
 
                 const resp = await fetch('/api/save-generated', { method: 'POST', body: formData });
@@ -1404,7 +1432,7 @@ Example: Nike Air Max 90 running shoes for men, sizes UK 7-12, black and white c
             const title = currentResult?.content?.product_title || 'Check out this product!';
             const desc = currentResult?.content?.product_description || '';
             const shareText = title + (desc ? ' - ' + desc.substring(0, 100) : '');
-            const pamphletUrl = currentResult?.pamphlet_url ? window.location.origin + currentResult.pamphlet_url : '';
+            const pamphletUrl = toPublicUrl(currentResult?.pamphlet_url || '');
 
             // Track the share
             if (savedProductId) {

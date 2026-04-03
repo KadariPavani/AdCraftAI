@@ -26,6 +26,26 @@ from app.smart_prompt import SmartPromptParser, CATEGORY_FIELDS
 from app.storage import ImageStorage
 
 # ---------------------------------------------------------------------------
+# Helper Functions
+# ---------------------------------------------------------------------------
+
+def get_public_url(path_or_url: str) -> str:
+    """Convert a path or URL to a publicly accessible URL.
+    - If it's already a URL (http/https), return as-is (Cloudinary)
+    - If it's a local path, wrap with /file?path=
+    """
+    if not path_or_url:
+        return None
+    
+    # Already a URL (Cloudinary or external)
+    if path_or_url.startswith(('http://', 'https://')):
+        return path_or_url
+    
+    # Local file path - needs /file endpoint
+    return f"/file?path={path_or_url}"
+
+
+# ---------------------------------------------------------------------------
 # App Setup
 # ---------------------------------------------------------------------------
 
@@ -147,9 +167,9 @@ async def serve_product_hub(product_id: str):
     pamphlet_url = ""
     product_image_url = ""
     if latest_content and latest_content.get("pamphlet_path"):
-        pamphlet_url = f"/file?path={latest_content['pamphlet_path']}"
+        pamphlet_url = get_public_url(latest_content['pamphlet_path'])
     if latest_content and latest_content.get("product_image_path"):
-        product_image_url = f"/file?path={latest_content['product_image_path']}"
+        product_image_url = get_public_url(latest_content['product_image_path'])
 
     brand = product.get("brand", product.get("name", "Product"))
     description = product.get("description", "")
@@ -171,7 +191,7 @@ async def serve_product_hub(product_id: str):
     price = product.get("price", "")
 
     # Product images for gallery
-    image_urls = [f"/file?path={ip}" for ip in product.get("image_paths", [])]
+    image_urls = [get_public_url(ip) for ip in product.get("image_paths", [])]
     # Use pamphlet as hero, fallback to first product image
     hero_image = pamphlet_url or product_image_url or (image_urls[0] if image_urls else "")
 
@@ -540,7 +560,7 @@ async def dataset_summary():
             encoded = quote(img_path, safe="/\\:")
             ts = meta.get("timestamp", "")
             bd["sample_images"].append({
-                "url": f"/file?path={encoded}",
+                "url": get_public_url(encoded),
                 "timestamp": ts,
                 "ad_type": ad_type,
             })
@@ -809,8 +829,8 @@ async def generate_ad(
         },
         "translations": result.translations,
         "languages_generated": result.languages_generated,
-        "pamphlet_url": f"/file?path={result.pamphlet_path}" if result.pamphlet_path else None,
-        "product_image_url": f"/file?path={result.product_image_path}" if result.product_image_path else None,
+        "pamphlet_url": get_public_url(result.pamphlet_path),
+        "product_image_url": get_public_url(result.product_image_path),
         "retrieved_ads": result.retrieved_ads[:3],
         "colors": result.extracted_colors,
         "dataset_paths": result.dataset_paths,
@@ -963,7 +983,7 @@ async def list_products():
     # Add hub URLs
     for p in products:
         p["hub_url"] = f"/hub/{p['id']}"
-        p["image_urls"] = [f"/file?path={ip}" for ip in p.get("image_paths", [])]
+        p["image_urls"] = [get_public_url(ip) for ip in p.get("image_paths", [])]
     return {"products": products}
 
 
@@ -978,7 +998,7 @@ async def get_product(product_id: str):
     analytics = pipeline.db.get_analytics(product_id)
 
     product["hub_url"] = f"/hub/{product_id}"
-    product["image_urls"] = [f"/file?path={ip}" for ip in product.get("image_paths", [])]
+    product["image_urls"] = [get_public_url(ip) for ip in product.get("image_paths", [])]
 
     return {
         "product": product,
@@ -1044,8 +1064,8 @@ async def generate_for_product(
             "hashtags": result.hashtags,
         },
         "translations": result.translations,
-        "pamphlet_url": f"/file?path={result.pamphlet_path}" if result.pamphlet_path else None,
-        "product_image_url": f"/file?path={result.product_image_path}" if result.product_image_path else None,
+        "pamphlet_url": get_public_url(result.pamphlet_path),
+        "product_image_url": get_public_url(result.product_image_path),
         "dataset_paths": result.dataset_paths,
         "timings": result.stage_timings,
         "errors": result.errors,
@@ -1077,7 +1097,7 @@ async def enhance_image(image: UploadFile = File(...)):
     print(f"[API] Enhanced image saved: {path} | Size: {enhanced.size}")
 
     return {
-        "enhanced_image_url": f"/file?path={path}",
+        "enhanced_image_url": get_public_url(path),
         "original_size": img.size,
         "enhanced_size": enhanced.size,
     }
