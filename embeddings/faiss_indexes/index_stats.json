@@ -1,0 +1,6 @@
+{
+  "total_vectors": 61576,
+  "embedding_dim": 512,
+  "index_type": "FlatL2",
+  "metadata_count": 61576
+}

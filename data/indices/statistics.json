@@ -1,0 +1,42 @@
+{
+  "total_records": 61622,
+  "total_images": 61622,
+  "annotation_files": [
+    "web_annot_j.json",
+    "adgal_annot_j.json",
+    "epaper1_annotation.json",
+    "epaper2_annotation.json"
+  ],
+  "languages": [
+    "Assamese",
+    "Bengali",
+    "Gujarati",
+    "Hindi",
+    "Kannada",
+    "Malayalam",
+    "Marathi",
+    "Odia",
+    "Punjabi",
+    "Tamil",
+    "Telugu",
+    "Urdu",
+    "arabic",
+    "bengali",
+    "english",
+    "gujarati",
+    "hindi",
+    "hindih",
+    "kannada",
+    "malayalam",
+    "marathi",
+    "odia",
+    "tamil",
+    "telugu",
+    "urdu"
+  ],
+  "sources": [
+    "internet",
+    "newpaper",
+    "newspaper"
+  ]
+}

@@ -1,0 +1,57 @@
+# ============================================================
+# Render Blueprint — MAdVerse (AdCraft AI)
+# ============================================================
+# Deploy with: connect this repo in the Render dashboard and
+# Render will automatically pick up this render.yaml.
+#
+# Recommended plan: "standard" (2 GB RAM) for PyTorch + FAISS.
+# The "starter" plan (512 MB) may OOM during model loading.
+# ============================================================
+
+services:
+  - type: web
+    name: madverse-adcraft
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+
+    # ── Resource plan ─────────────────────────────────────────
+    # standard = 2 GB RAM, 1 CPU ($25/month)
+    # starter   = 512 MB RAM, 0.5 CPU ($7/month) — may be tight
+    # free tier is NOT recommended (insufficient RAM for PyTorch)
+    plan: standard
+
+    # ── Health check ─────────────────────────────────────────
+    healthCheckPath: /api/health
+
+    # ── Environment variables ─────────────────────────────────
+    # Set the actual values in the Render dashboard.
+    # DO NOT put real keys here — this file is committed to git.
+    envVars:
+      # Required: at least one text generator key
+      - key: GOOGLE_API_KEY
+        sync: false          # set manually in dashboard
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      # Optional: image generation
+      - key: HF_TOKEN
+        sync: false
+      - key: TOGETHER_API_KEY
+        sync: false
+
+      # Render automatically sets PORT — no need to set it here
+      # Python runtime settings
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+    # ── Persistent disk ───────────────────────────────────────
+    # Stores generated outputs, uploads, and the SQLite database
+    # across deploys. Size: 1 GB (adjust as needed).
+    disk:
+      name: madverse-data
+      mountPath: /app/outputs
+      sizeGB: 1

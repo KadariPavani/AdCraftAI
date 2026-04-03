@@ -1,0 +1,76 @@
+# Recommended .gitignore for this Python project
+# Adjust entries if you *do* want to keep any of these in source control.
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+parts/
+sdist/
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Environment variables / secrets
+.env
+.env.*
+secrets.json
+*.pem
+*.key
+
+# VSCode
+.vscode/
+*.code-workspace
+.claude/
+# Pytest / cache
+.pytest_cache/
+.cache/
+
+# Type checkers
+.mypy_cache/
+.pyright/
+
+# IDEs
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and runtime files
+*.log
+*.pid
+
+# Database / local data
+*.sqlite3
+*.db
+
+# Project-specific large/generated folders
+# Dataset images are large (~18 GB) — downloaded at runtime in Docker
+data/images/
+outputs/
+products_db/
+uploads/
+
+# Keep these tracked (required for deployment):
+# data/annotations/  — annotation JSON files (~12 MB)
+# data/indices/       — statistics files
+# embeddings/         — FAISS index + metadata (~410 MB)
+# processed/          — metadata CSV (~12 MB)
+
+# Large binary files (use Git LFS for these if pushing to HF Spaces)
+# embeddings/image_embeddings.pkl  — uncomment if too large for git

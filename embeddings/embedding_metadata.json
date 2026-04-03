@@ -1,0 +1,8 @@
+{
+  "total_embeddings": 61576,
+  "total_attempted": 61591,
+  "failed_images": 1,
+  "embedding_dim": 512,
+  "model_name": "openai/clip-vit-base-patch32",
+  "success_rate": "99.98%"
+}
