@@ -35,3 +35,9 @@ deep-translator>=1.11.0
 # Utilities
 python-dotenv>=1.0.0
 tqdm>=4.65.0
+
+# Cloud storage (optional but recommended for production)
+cloudinary>=1.36.0
+
+# Database (for cloud deployment)
+psycopg2-binary>=2.9.9

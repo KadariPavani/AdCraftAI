@@ -23,6 +23,7 @@ from app.pipeline import (
     AdCraftPipeline, SUPPORTED_LANGUAGES, OUTPUT_DIR, UPLOAD_DIR
 )
 from app.smart_prompt import SmartPromptParser, CATEGORY_FIELDS
+from app.storage import ImageStorage
 
 # ---------------------------------------------------------------------------
 # App Setup
@@ -776,10 +777,9 @@ async def generate_ad(
         try:
             contents = await image.read()
             uploaded_image = Image.open(io.BytesIO(contents)).convert("RGB")
-            # Save uploaded image
+            # Save uploaded image using storage
             img_filename = f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{image.filename}"
-            img_path = UPLOAD_DIR / img_filename
-            uploaded_image.save(str(img_path))
+            img_path = pipeline.storage.save_image(uploaded_image, img_filename, folder="uploads")
             print(f"[API] Uploaded image saved: {img_path} | Size: {uploaded_image.size}")
         except Exception as e:
             print(f"[API] ERROR: Invalid image upload: {e}")
@@ -939,8 +939,8 @@ async def create_product(
                     contents = await img_file.read()
                     img = Image.open(io.BytesIO(contents)).convert("RGB")
                     filename = f"product_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{img_file.filename}"
-                    path = str(UPLOAD_DIR / filename)
-                    img.save(path, quality=95)
+                    # Save using storage abstraction
+                    path = pipeline.storage.save_image(img, filename, folder="uploads")
                     image_paths.append(path)
                     print(f"[API] Product image saved: {path} | Size: {img.size}")
                 except Exception as e:
@@ -1072,8 +1072,8 @@ async def enhance_image(image: UploadFile = File(...)):
 
     enhanced = pipeline.enhance_image(img)
     filename = f"enhanced_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    path = str(OUTPUT_DIR / filename)
-    enhanced.save(path, quality=95)
+    # Save using storage abstraction
+    path = pipeline.storage.save_image(enhanced, filename, folder="outputs")
     print(f"[API] Enhanced image saved: {path} | Size: {enhanced.size}")
 
     return {

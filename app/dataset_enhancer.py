@@ -327,8 +327,32 @@ class DatasetEnhancer:
                 writer.writerow(row)
 
     def _persist_index(self) -> None:
-        """Write FAISS index + id_to_metadata to disk."""
+        """Write FAISS index + id_to_metadata to disk atomically.
+        Uses temp files + rename for atomic writes to prevent partial persistence."""
         with self._lock:
-            faiss.write_index(self.index, str(FAISS_DIR / "madverse_index.faiss"))
-            with open(str(FAISS_DIR / "id_to_metadata.pkl"), "wb") as f:
-                pickle.dump(self.id_to_metadata, f)
+            try:
+                # Write to temporary files first
+                temp_faiss = FAISS_DIR / "madverse_index.faiss.tmp"
+                temp_meta = FAISS_DIR / "id_to_metadata.pkl.tmp"
+                
+                # Write FAISS index
+                faiss.write_index(self.index, str(temp_faiss))
+                
+                # Write metadata
+                with open(str(temp_meta), "wb") as f:
+                    pickle.dump(self.id_to_metadata, f)
+                
+                # Atomic rename (both or neither - prevents partial writes)
+                final_faiss = FAISS_DIR / "madverse_index.faiss"
+                final_meta = FAISS_DIR / "id_to_metadata.pkl"
+                
+                temp_faiss.replace(final_faiss)
+                temp_meta.replace(final_meta)
+                
+            except Exception as e:
+                # Clean up temp files on error
+                if temp_faiss.exists():
+                    temp_faiss.unlink()
+                if temp_meta.exists():
+                    temp_meta.unlink()
+                raise e

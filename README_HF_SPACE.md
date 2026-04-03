@@ -62,11 +62,22 @@ For best results, add these secrets in **Settings → Repository secrets**:
 - `GOOGLE_API_KEY` - Google Gemini API key ([Get free key](https://aistudio.google.com/apikey))
 - `GROQ_API_KEY` - Groq API key ([Get free key](https://console.groq.com))
 
+### Recommended (persistent image storage):
+- `USE_CLOUD_STORAGE=true` - Enable Cloudinary storage
+- `CLOUDINARY_CLOUD_NAME` - Your Cloudinary cloud name
+- `CLOUDINARY_API_KEY` - Your Cloudinary API key
+- `CLOUDINARY_API_SECRET` - Your Cloudinary API secret
+
+**Get free Cloudinary account:** [cloudinary.com/users/register/free](https://cloudinary.com/users/register/free)
+
 ### Optional (improved image quality):
 - `HF_TOKEN` - Hugging Face token ([Get free token](https://huggingface.co/settings/tokens))
 - `TOGETHER_API_KEY` - Together AI key
+- `ANTHROPIC_API_KEY` - Anthropic API key
 
 **Without API keys**: The app works with free alternatives (Pollinations.ai) but quality may be lower.
+
+**Without cloud storage**: Images will be stored locally and **lost on container restart**. Cloudinary ensures persistent storage.
 
 ## 📖 How to Use
 

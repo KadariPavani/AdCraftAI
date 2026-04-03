@@ -32,6 +32,7 @@ from app.content_gen import GeminiTextGenerator, GroqTextGenerator, AnthropicTex
 from app.designer import ProAdDesigner
 from app.database import Database
 from app.dataset_enhancer import DatasetEnhancer
+from app.storage import ImageStorage
 
 load_dotenv()
 
@@ -107,6 +108,10 @@ class AdCraftPipeline:
             device=self.device,
         )
         print(f"  [INIT] DatasetEnhancer initialized (continuous learning)")
+        
+        # Initialize storage (Cloudinary if configured, else local)
+        self.storage = ImageStorage()
+        print(f"  [INIT] Storage initialized")
 
         print("\n" + "-" * 70)
         print("  Pipeline ready! All components loaded successfully.")
@@ -179,33 +184,43 @@ class AdCraftPipeline:
         if brand_match.matched_brand:
             brand_indices = self.brand_matcher.get_brand_indices(brand_match.matched_brand)
             if brand_indices:
-                vectors = np.array(
-                    [self.index.reconstruct(int(i)) for i in brand_indices],
-                    dtype=np.float32,
-                )
-                sub_index = faiss.IndexFlatL2(self.index.d)
-                sub_index.add(vectors)
-                actual_k = min(k, len(brand_indices))
-                distances, sub_indices = sub_index.search(np.array([query_vec]), actual_k)
-                results = []
-                for rank, (dist, sub_idx) in enumerate(zip(distances[0], sub_indices[0]), 1):
-                    if sub_idx < 0:
-                        continue
-                    original_idx = brand_indices[int(sub_idx)]
-                    meta = self.id_to_metadata[original_idx]
-                    results.append(RetrievedAd(
-                        rank=rank, similarity=float(1 / (1 + float(dist))),
-                        distance=float(dist),
-                        image_path=meta.get("image_path", ""),
-                        image_id=meta.get("image_id", ""),
-                        brand=meta.get("brand", ""),
-                        category=meta.get("category", ""),
-                        subcategory=meta.get("subcategory", ""),
-                        language=meta.get("language", ""),
-                        ad_type=meta.get("ad_type", ""),
-                        source=meta.get("source", ""),
-                    ))
-                return results
+                # Filter out invalid indices that are beyond FAISS index size
+                valid_indices = [int(i) for i in brand_indices if int(i) < self.index.ntotal]
+                if not valid_indices:
+                    print(f"  [FAISS] WARNING: No valid indices for brand {brand_match.matched_brand}")
+                    print(f"  [FAISS] All {len(brand_indices)} brand indices are >= {self.index.ntotal}")
+                    print(f"  [FAISS] Falling back to full index search")
+                else:
+                    if len(valid_indices) < len(brand_indices):
+                        print(f"  [FAISS] WARNING: Filtered {len(brand_indices) - len(valid_indices)} invalid indices")
+                        print(f"  [FAISS] Using {len(valid_indices)} valid indices out of {len(brand_indices)}")
+                    vectors = np.array(
+                        [self.index.reconstruct(int(i)) for i in valid_indices],
+                        dtype=np.float32,
+                    )
+                    sub_index = faiss.IndexFlatL2(self.index.d)
+                    sub_index.add(vectors)
+                    actual_k = min(k, len(valid_indices))
+                    distances, sub_indices = sub_index.search(np.array([query_vec]), actual_k)
+                    results = []
+                    for rank, (dist, sub_idx) in enumerate(zip(distances[0], sub_indices[0]), 1):
+                        if sub_idx < 0:
+                            continue
+                        original_idx = valid_indices[int(sub_idx)]
+                        meta = self.id_to_metadata[original_idx]
+                        results.append(RetrievedAd(
+                            rank=rank, similarity=float(1 / (1 + float(dist))),
+                            distance=float(dist),
+                            image_path=meta.get("image_path", ""),
+                            image_id=meta.get("image_id", ""),
+                            brand=meta.get("brand", ""),
+                            category=meta.get("category", ""),
+                            subcategory=meta.get("subcategory", ""),
+                            language=meta.get("language", ""),
+                            ad_type=meta.get("ad_type", ""),
+                            source=meta.get("source", ""),
+                        ))
+                    return results
 
         distances, indices = self.index.search(np.array([query_vec]), k)
         results = []
@@ -608,8 +623,9 @@ class AdCraftPipeline:
 
             if product_img:
                 content.product_image = product_img
-                prod_path = str(OUTPUT_DIR / f"product_{timestamp}.png")
-                product_img.save(prod_path, quality=95)
+                # Save using storage abstraction (cloud or local)
+                filename = f"product_{timestamp}.png"
+                prod_path = self.storage.save_image(product_img, filename, folder="outputs")
                 result.product_image_path = prod_path
                 print(f"  [IMAGE] Saved to: {prod_path}")
 
@@ -690,8 +706,9 @@ class AdCraftPipeline:
                     product_img = product_img.resize((1080, 1080), Image.LANCZOS)
 
                 pamphlet = product_img.convert("RGB")
-                pamphlet_path = str(OUTPUT_DIR / f"pamphlet_{timestamp}.png")
-                pamphlet.save(pamphlet_path, quality=95)
+                # Save using storage abstraction (cloud or local)
+                filename = f"pamphlet_{timestamp}.png"
+                pamphlet_path = self.storage.save_image(pamphlet, filename, folder="outputs")
                 result.pamphlet_path = pamphlet_path
                 print(f"  [DESIGN] Pamphlet saved: {pamphlet_path}")
                 print(f"  [DESIGN] Pamphlet size: {pamphlet.size}")
