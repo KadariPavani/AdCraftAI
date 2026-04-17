@@ -1,66 +1,235 @@
-# Image generation: HuggingFace FLUX.1-schnell (primary) + gradient fallback.
-# Clean single-path implementation — no unnecessary fallback chains.
+# Image generation: HuggingFace FLUX.1-schnell (primary), Pollinations, xAI Grok, then gradient fallback.
+# Multi-provider chain for robust prompt-based ad image generation.
 
 import io
 import math
+import os
 import random
 import time
-from typing import Optional, Tuple
+import base64
+from typing import Dict, Optional, Tuple
+from urllib.parse import quote
 
 import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+try:
+    from huggingface_hub import InferenceClient
+except Exception:  # optional runtime dependency
+    InferenceClient = None
 
 
 # ---------------------------------------------------------------------------
-# Remote Image Generator — HuggingFace FLUX.1-schnell + gradient fallback
+# Remote Image Generator — HF FLUX + Pollinations + xAI Grok + gradient fallback
 # ---------------------------------------------------------------------------
 
 class ImageGenerator:
-    """Image generation with one reliable API + one local fallback:
+    """Image generation with provider chain + one local fallback:
     1. HuggingFace FLUX.1-schnell (primary — fast, high quality, needs HF_TOKEN)
-    2. Gradient fallback (local PIL — always works, no API needed)
+    2. xAI Grok image API (secondary, needs XAI_API_KEY)
+    3. Pollinations image API (tertiary, no key required)
+    4. Gradient fallback (local PIL — always works, no API needed)
     """
 
     HF_MODEL_NAME = "FLUX.1-schnell"
     HF_MODEL_URL = "https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-schnell"
     HF_TIMEOUT = 120
+    POLLINATIONS_URL = "https://image.pollinations.ai/prompt/"
+    POLLINATIONS_TIMEOUT = 90
+    XAI_IMAGE_URL = "https://api.x.ai/v1/images/generations"
+    XAI_TIMEOUT = 90
+    HF_MODEL_ENDPOINT = "https://router.huggingface.co/hf-inference/models/{model_id}"
+    HF_DEFAULT_TEXT_MODEL = "black-forest-labs/FLUX.1-schnell"
+    HF_DEFAULT_IMG2IMG_MODEL = "black-forest-labs/FLUX.1-Kontext-dev"
+    HF_MODEL_CONFIGS: Dict[str, Dict[str, str]] = {
+        "flux1-schnell": {
+            "hf_model_id": "black-forest-labs/FLUX.1-schnell",
+            "task": "text-to-image",
+            "label": "FLUX.1-schnell",
+        },
+        "flux1-kontext-dev": {
+            "hf_model_id": "black-forest-labs/FLUX.1-Kontext-dev",
+            "task": "image-to-image",
+            "label": "FLUX.1 Kontext [dev]",
+        },
+        "flux1-redux-dev": {
+            "hf_model_id": "black-forest-labs/FLUX.1-Redux-dev",
+            "task": "image-to-image",
+            "label": "FLUX.1 Redux [dev]",
+        },
+        "flux2-dev": {
+            "hf_model_id": "black-forest-labs/FLUX.2-dev",
+            "task": "image-to-image",
+            "label": "FLUX.2 [dev]",
+        },
+        "flux2-pro": {
+            "hf_model_id": "black-forest-labs/FLUX.2-pro",
+            "task": "image-to-image",
+            "label": "FLUX.2 [pro]",
+        },
+        "flux2-max": {
+            "hf_model_id": "black-forest-labs/FLUX.2-max",
+            "task": "image-to-image",
+            "label": "FLUX.2 [max]",
+        },
+    }
 
-    def __init__(self, hf_token: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        hf_token: Optional[str] = None,
+        together_key: Optional[str] = None,
+        xai_api_key: Optional[str] = None,
+        xai_image_model: str = "grok-2-image-1212",
+        **kwargs
+    ):
         self.hf_token = hf_token
+        self.together_key = together_key
+        self.xai_api_key = xai_api_key
+        self.xai_image_model = xai_image_model
+        raw_providers = os.getenv(
+            "HF_IMG2IMG_PROVIDERS",
+            "fal-ai,blackforestlabs,replicate,together,auto"
+        )
+        self.hf_img2img_providers = [p.strip() for p in raw_providers.split(",") if p.strip()]
+
+    @staticmethod
+    def _decode_image_any(payload) -> Optional[Image.Image]:
+        if payload is None:
+            return None
+        if isinstance(payload, Image.Image):
+            return payload
+        if isinstance(payload, (bytes, bytearray)):
+            try:
+                return Image.open(io.BytesIO(payload))
+            except Exception:
+                return None
+        if isinstance(payload, dict):
+            for key in ("image", "b64_json"):
+                raw = payload.get(key)
+                if isinstance(raw, str):
+                    encoded = raw.split(",", 1)[1] if raw.startswith("data:image") and "," in raw else raw
+                    try:
+                        return Image.open(io.BytesIO(base64.b64decode(encoded)))
+                    except Exception:
+                        continue
+        if isinstance(payload, list):
+            for item in payload:
+                img = ImageGenerator._decode_image_any(item)
+                if img is not None:
+                    return img
+        return None
+
+    @classmethod
+    def _normalize_model_name(cls, model_name: Optional[str]) -> str:
+        if not model_name:
+            return "flux1-schnell"
+        normalized = model_name.strip().lower().replace("_", "-")
+        aliases = {
+            "flux.1-schnell": "flux1-schnell",
+            "flux.1-kontext-dev": "flux1-kontext-dev",
+            "flux.1-redux-dev": "flux1-redux-dev",
+            "flux.2-dev": "flux2-dev",
+            "flux.2-pro": "flux2-pro",
+            "flux.2-max": "flux2-max",
+        }
+        return aliases.get(normalized, normalized)
+
+    @classmethod
+    def _resolve_model_config(cls, model_name: Optional[str]) -> Dict[str, str]:
+        key = cls._normalize_model_name(model_name)
+        return cls.HF_MODEL_CONFIGS.get(key, cls.HF_MODEL_CONFIGS["flux1-schnell"])
 
     def generate(
         self, prompt: str, negative_prompt: str = "",
         width: int = 1024, height: int = 768,
+        model_preference: Optional[str] = None,
     ) -> Tuple[Optional[Image.Image], str]:
-        """Generate image: try HF FLUX.1-schnell first, gradient fallback if it fails."""
+        """Generate image via provider chain; fallback to gradient if all fail."""
         print(f"\n    [IMG-GEN] Starting image generation")
         print(f"    [IMG-GEN] Target: {width}x{height}")
         print(f"    [IMG-GEN] Prompt ({len(prompt)} chars): \"{prompt[:100]}...\"")
+        selected = self._resolve_model_config(model_preference)
+        selected_model = selected["hf_model_id"]
+        selected_label = selected["label"]
+        if selected.get("task") == "image-to-image":
+            print(f"    [IMG-GEN] Requested model is image-to-image only: {selected_label}")
+            print(f"    [IMG-GEN] Falling back to text-capable model: {self.HF_MODEL_NAME}")
+            selected_model = self.HF_DEFAULT_TEXT_MODEL
+            selected_label = self.HF_MODEL_NAME
 
         # Primary: HuggingFace FLUX.1-schnell
-        print(f"\n    [IMG-GEN] === PRIMARY: HuggingFace {self.HF_MODEL_NAME} ===")
-        img = self._generate_hf_flux(prompt)
+        print(f"\n    [IMG-GEN] === PRIMARY: HuggingFace {selected_label} ===")
+        img = self._generate_hf_text_to_image(prompt, selected_model, selected_label)
         if img:
-            print(f"    [IMG-GEN] SUCCESS! Image generated via {self.HF_MODEL_NAME}")
-            return img, f"hf_flux1-schnell"
+            print(f"    [IMG-GEN] SUCCESS! Image generated via {selected_label}")
+            return img, f"hf_{self._normalize_model_name(model_preference)}"
+
+        # Secondary: xAI Grok image API
+        print(f"\n    [IMG-GEN] === SECONDARY: xAI Grok Image ===")
+        img = self._generate_xai_grok_image(prompt, width, height)
+        if img:
+            print(f"    [IMG-GEN] SUCCESS! Image generated via xAI Grok")
+            return img, "xai_grok_image"
+
+        # Tertiary: Pollinations image API
+        print(f"\n    [IMG-GEN] === TERTIARY: Pollinations Image ===")
+        img = self._generate_pollinations(prompt, negative_prompt, width, height)
+        if img:
+            print(f"    [IMG-GEN] SUCCESS! Image generated via Pollinations")
+            return img, "pollinations_image"
 
         # Fallback: Local gradient
         print(f"\n    [IMG-GEN] === FALLBACK: Gradient (Local PIL) ===")
-        print(f"    [IMG-GEN] HF generation failed, creating local gradient...")
+        print(f"    [IMG-GEN] All remote providers failed, creating local gradient...")
         img = self._make_gradient(width, height)
         print(f"    [IMG-GEN] Gradient generated: {img.size}")
         return img, "gradient_fallback"
 
-    def _generate_hf_flux(self, prompt: str) -> Optional[Image.Image]:
-        """Generate image using HuggingFace FLUX.1-schnell inference API."""
+    def edit(
+        self,
+        image: Image.Image,
+        prompt: str,
+        negative_prompt: str = "",
+        width: int = 1080,
+        height: int = 1080,
+        model_preference: Optional[str] = None,
+    ) -> Tuple[Optional[Image.Image], str]:
+        """Edit/enhance an existing image using FLUX image-to-image models."""
+        selected_key = self._normalize_model_name(model_preference)
+        selected = self._resolve_model_config(model_preference)
+        selected_model = selected["hf_model_id"]
+        selected_label = selected["label"]
+        if selected.get("task") != "image-to-image":
+            selected_key = "flux1-kontext-dev"
+            selected_model = self.HF_DEFAULT_IMG2IMG_MODEL
+            selected_label = self.HF_MODEL_CONFIGS["flux1-kontext-dev"]["label"]
+
+        print(f"\n    [IMG-EDIT] Starting image-to-image enhancement")
+        print(f"    [IMG-EDIT] Model: {selected_label}")
+        print(f"    [IMG-EDIT] Input size: {image.size} | Target: {width}x{height}")
+        edited = self._generate_hf_image_to_image(
+            image=image,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            model_id=selected_model,
+            model_label=selected_label,
+            width=width,
+            height=height,
+        )
+        if edited:
+            return edited, f"hf_{selected_key}_img2img"
+        return None, "img2img_failed"
+
+    def _generate_hf_text_to_image(self, prompt: str, model_id: str, model_label: str) -> Optional[Image.Image]:
+        """Generate image using HuggingFace FLUX inference API."""
         if not self.hf_token:
             print(f"      [HF-FLUX] SKIPPED: No HF_TOKEN set")
             print(f"      [HF-FLUX] To enable: set HF_TOKEN in .env file")
             return None
 
-        print(f"      [HF-FLUX] Model: {self.HF_MODEL_NAME}")
-        print(f"      [HF-FLUX] URL: {self.HF_MODEL_URL}")
+        endpoint = self.HF_MODEL_ENDPOINT.format(model_id=model_id)
+        print(f"      [HF-FLUX] Model: {model_label}")
+        print(f"      [HF-FLUX] URL: {endpoint}")
         print(f"      [HF-FLUX] Token: {self.hf_token[:8]}...{self.hf_token[-4:]}")
         print(f"      [HF-FLUX] Timeout: {self.HF_TIMEOUT}s")
 
@@ -71,14 +240,15 @@ class ImageGenerator:
             print(f"      [HF-FLUX] Sending inference request...")
             t0 = time.time()
             resp = requests.post(
-                self.HF_MODEL_URL, headers=headers,
+                endpoint, headers=headers,
                 json=payload, timeout=self.HF_TIMEOUT,
             )
             elapsed = time.time() - t0
             print(f"      [HF-FLUX] Response: status={resp.status_code} | size={len(resp.content):,} bytes | time={elapsed:.1f}s")
 
-            if resp.status_code == 200 and len(resp.content) > 1000:
-                img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+            decoded = self._decode_hf_image_response(resp)
+            if resp.status_code == 200 and decoded is not None:
+                img = decoded.convert("RGB")
                 print(f"      [HF-FLUX] SUCCESS! Image decoded: {img.size} | Mode: {img.mode}")
                 return img
 
@@ -89,13 +259,14 @@ class ImageGenerator:
                 print(f"      [HF-FLUX] Retrying after cold start...")
                 t0 = time.time()
                 resp = requests.post(
-                    self.HF_MODEL_URL, headers=headers,
+                    endpoint, headers=headers,
                     json=payload, timeout=self.HF_TIMEOUT,
                 )
                 elapsed = time.time() - t0
                 print(f"      [HF-FLUX] Retry response: status={resp.status_code} | size={len(resp.content):,} bytes | time={elapsed:.1f}s")
-                if resp.status_code == 200 and len(resp.content) > 1000:
-                    img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+                decoded = self._decode_hf_image_response(resp)
+                if resp.status_code == 200 and decoded is not None:
+                    img = decoded.convert("RGB")
                     print(f"      [HF-FLUX] SUCCESS after retry! Image: {img.size}")
                     return img
                 print(f"      [HF-FLUX] Still not ready after retry: status={resp.status_code}")
@@ -118,6 +289,297 @@ class ImageGenerator:
         except Exception as e:
             print(f"      [HF-FLUX] ERROR: {type(e).__name__}: {e}")
 
+        return None
+
+    def _generate_hf_image_to_image(
+        self,
+        image: Image.Image,
+        prompt: str,
+        negative_prompt: str,
+        model_id: str,
+        model_label: str,
+        width: int,
+        height: int,
+    ) -> Optional[Image.Image]:
+        if not self.hf_token:
+            print("      [HF-IMG2IMG] SKIPPED: No HF_TOKEN set")
+            return None
+
+        client_img = self._generate_hf_image_to_image_via_client(
+            image=image,
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            model_id=model_id,
+            width=width,
+            height=height,
+        )
+        if client_img is not None:
+            return client_img
+
+        endpoint = self.HF_MODEL_ENDPOINT.format(model_id=model_id)
+        print(f"      [HF-IMG2IMG] Model: {model_label}")
+        print(f"      [HF-IMG2IMG] URL: {endpoint}")
+        print(f"      [HF-IMG2IMG] Timeout: {self.HF_TIMEOUT}s")
+
+        buffer = io.BytesIO()
+        image.convert("RGB").save(buffer, format="PNG")
+        image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+        payload = {
+            "inputs": image_b64,
+            "parameters": {
+                "prompt": prompt,
+                "negative_prompt": negative_prompt[:900] if negative_prompt else "",
+                "guidance_scale": 2.5,
+                "num_inference_steps": 30,
+                "target_size": {"width": width, "height": height},
+            },
+        }
+        headers = {
+            "Authorization": f"Bearer {self.hf_token}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            t0 = time.time()
+            resp = requests.post(endpoint, headers=headers, json=payload, timeout=self.HF_TIMEOUT)
+            elapsed = time.time() - t0
+            print(f"      [HF-IMG2IMG] Response: status={resp.status_code} | size={len(resp.content):,} bytes | time={elapsed:.1f}s")
+            if resp.status_code != 200:
+                try:
+                    print(f"      [HF-IMG2IMG] Error body: {resp.text[:280]}")
+                except Exception:
+                    pass
+                return None
+
+            decoded = self._decode_hf_image_response(resp)
+            if decoded is None:
+                print("      [HF-IMG2IMG] Failed to decode image payload")
+                return None
+            print(f"      [HF-IMG2IMG] SUCCESS! Image decoded: {decoded.size}")
+            return decoded.convert("RGB")
+        except requests.Timeout:
+            print(f"      [HF-IMG2IMG] TIMEOUT after {self.HF_TIMEOUT}s")
+        except Exception as e:
+            print(f"      [HF-IMG2IMG] ERROR: {type(e).__name__}: {e}")
+        return None
+
+    def _generate_hf_image_to_image_via_client(
+        self,
+        image: Image.Image,
+        prompt: str,
+        negative_prompt: str,
+        model_id: str,
+        width: int,
+        height: int,
+    ) -> Optional[Image.Image]:
+        if InferenceClient is None:
+            print("      [HF-IMG2IMG-CLIENT] huggingface_hub not available, skipping provider client")
+            return None
+
+        buffer = io.BytesIO()
+        image.convert("RGB").save(buffer, format="PNG")
+        image_bytes = buffer.getvalue()
+
+        providers = self.hf_img2img_providers or ["auto"]
+        print(f"      [HF-IMG2IMG-CLIENT] Providers: {providers}")
+        for provider in providers:
+            client_kwargs = {"api_key": self.hf_token}
+            if provider != "auto":
+                client_kwargs["provider"] = provider
+            try:
+                print(f"      [HF-IMG2IMG-CLIENT] Trying provider: {provider}")
+                client = InferenceClient(**client_kwargs)
+                t0 = time.time()
+                response = client.image_to_image(
+                    image_bytes,
+                    prompt=prompt,
+                    model=model_id,
+                    negative_prompt=negative_prompt[:900] if negative_prompt else None,
+                    guidance_scale=2.5,
+                    num_inference_steps=30,
+                )
+                elapsed = time.time() - t0
+                decoded = self._decode_image_any(response)
+                if decoded is None:
+                    print(f"      [HF-IMG2IMG-CLIENT] Provider {provider} returned undecodable payload")
+                    continue
+                decoded = decoded.convert("RGB")
+                if decoded.size != (width, height):
+                    decoded = decoded.resize((width, height), Image.LANCZOS)
+                print(f"      [HF-IMG2IMG-CLIENT] SUCCESS via {provider}: {decoded.size} | time={elapsed:.1f}s")
+                return decoded
+            except TypeError:
+                # Backward/alternate method signature fallback
+                try:
+                    print(f"      [HF-IMG2IMG-CLIENT] Retrying provider {provider} with alternate signature")
+                    client = InferenceClient(**client_kwargs)
+                    t0 = time.time()
+                    response = client.image_to_image(
+                        inputs=image_bytes,
+                        model=model_id,
+                        parameters={
+                            "prompt": prompt,
+                            "negative_prompt": negative_prompt[:900] if negative_prompt else "",
+                            "guidance_scale": 2.5,
+                            "num_inference_steps": 30,
+                            "target_size": {"width": width, "height": height},
+                        },
+                    )
+                    elapsed = time.time() - t0
+                    decoded = self._decode_image_any(response)
+                    if decoded is None:
+                        print(f"      [HF-IMG2IMG-CLIENT] Alternate signature undecodable for {provider}")
+                        continue
+                    decoded = decoded.convert("RGB")
+                    if decoded.size != (width, height):
+                        decoded = decoded.resize((width, height), Image.LANCZOS)
+                    print(f"      [HF-IMG2IMG-CLIENT] SUCCESS via {provider} (alt): {decoded.size} | time={elapsed:.1f}s")
+                    return decoded
+                except Exception as e:
+                    print(f"      [HF-IMG2IMG-CLIENT] Provider {provider} failed (alt): {type(e).__name__}: {e}")
+            except Exception as e:
+                print(f"      [HF-IMG2IMG-CLIENT] Provider {provider} failed: {type(e).__name__}: {e}")
+        print("      [HF-IMG2IMG-CLIENT] All providers failed, falling back to legacy endpoint call")
+        return None
+
+    @staticmethod
+    def _decode_hf_image_response(resp: requests.Response) -> Optional[Image.Image]:
+        content_type = (resp.headers.get("content-type") or "").lower()
+        try:
+            if content_type.startswith("image/"):
+                return Image.open(io.BytesIO(resp.content))
+
+            data = resp.json()
+            candidates = []
+            if isinstance(data, dict):
+                if isinstance(data.get("image"), str):
+                    candidates.append(data["image"])
+                images = data.get("images")
+                if isinstance(images, list):
+                    for img in images:
+                        if isinstance(img, str):
+                            candidates.append(img)
+                        elif isinstance(img, dict):
+                            maybe = img.get("b64_json") or img.get("image")
+                            if isinstance(maybe, str):
+                                candidates.append(maybe)
+                if isinstance(data.get("data"), list):
+                    for item in data["data"]:
+                        if isinstance(item, dict):
+                            maybe = item.get("b64_json") or item.get("image")
+                            if isinstance(maybe, str):
+                                candidates.append(maybe)
+
+            for raw in candidates:
+                payload = raw.split(",", 1)[1] if raw.startswith("data:image") and "," in raw else raw
+                try:
+                    decoded = base64.b64decode(payload)
+                    if len(decoded) > 1000:
+                        return Image.open(io.BytesIO(decoded))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None
+
+    def _generate_pollinations(
+        self,
+        prompt: str,
+        negative_prompt: str = "",
+        width: int = 1024,
+        height: int = 768,
+    ) -> Optional[Image.Image]:
+        """Generate image using Pollinations image API (no API key required)."""
+        try:
+            seed = int(time.time()) % 100000
+            safe_prompt = quote(prompt, safe="")
+            url = f"{self.POLLINATIONS_URL}{safe_prompt}"
+            params = {
+                "width": width,
+                "height": height,
+                "seed": seed,
+                "model": "flux",
+                "nologo": "true",
+            }
+            if negative_prompt:
+                params["negative_prompt"] = negative_prompt[:900]
+
+            print(f"      [POLL-IMG] URL: {self.POLLINATIONS_URL}<encoded-prompt>")
+            print(f"      [POLL-IMG] Params: model=flux, size={width}x{height}, seed={seed}")
+            t0 = time.time()
+            resp = requests.get(url, params=params, timeout=self.POLLINATIONS_TIMEOUT)
+            elapsed = time.time() - t0
+            print(f"      [POLL-IMG] Response: status={resp.status_code} | size={len(resp.content):,} bytes | time={elapsed:.1f}s")
+
+            if resp.status_code == 200 and len(resp.content) > 1000:
+                img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+                print(f"      [POLL-IMG] SUCCESS! Image decoded: {img.size} | Mode: {img.mode}")
+                return img
+
+            print(f"      [POLL-IMG] FAILED: status={resp.status_code}")
+            return None
+        except requests.Timeout:
+            print(f"      [POLL-IMG] TIMEOUT after {self.POLLINATIONS_TIMEOUT}s")
+        except Exception as e:
+            print(f"      [POLL-IMG] ERROR: {type(e).__name__}: {e}")
+        return None
+
+    def _generate_xai_grok_image(self, prompt: str, width: int = 1024, height: int = 768) -> Optional[Image.Image]:
+        """Generate image using xAI Grok image API if XAI_API_KEY is configured."""
+        if not self.xai_api_key:
+            print("      [XAI-IMG] SKIPPED: No XAI_API_KEY set")
+            return None
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.xai_api_key}",
+                "Content-Type": "application/json",
+            }
+            payload = {
+                "model": self.xai_image_model,
+                "prompt": prompt,
+                "size": f"{width}x{height}",
+            }
+
+            print(f"      [XAI-IMG] URL: {self.XAI_IMAGE_URL}")
+            print(f"      [XAI-IMG] Model: {self.xai_image_model} | Size: {width}x{height}")
+            t0 = time.time()
+            resp = requests.post(self.XAI_IMAGE_URL, json=payload, headers=headers, timeout=self.XAI_TIMEOUT)
+            elapsed = time.time() - t0
+            print(f"      [XAI-IMG] Response: status={resp.status_code} | time={elapsed:.1f}s")
+            if resp.status_code != 200:
+                print(f"      [XAI-IMG] FAILED: {resp.text[:200]}")
+                return None
+
+            data = resp.json()
+            candidates = data.get("data", [])
+            if not candidates:
+                print("      [XAI-IMG] FAILED: No image data returned")
+                return None
+
+            first = candidates[0]
+            if first.get("url"):
+                img_resp = requests.get(first["url"], timeout=self.XAI_TIMEOUT)
+                if img_resp.status_code == 200 and len(img_resp.content) > 1000:
+                    img = Image.open(io.BytesIO(img_resp.content)).convert("RGB")
+                    print(f"      [XAI-IMG] SUCCESS via URL: {img.size}")
+                    return img
+                print(f"      [XAI-IMG] URL download failed: status={img_resp.status_code}")
+                return None
+
+            if first.get("b64_json"):
+                raw = base64.b64decode(first["b64_json"])
+                if len(raw) > 1000:
+                    img = Image.open(io.BytesIO(raw)).convert("RGB")
+                    print(f"      [XAI-IMG] SUCCESS via b64_json: {img.size}")
+                    return img
+
+            print("      [XAI-IMG] FAILED: Unsupported response payload")
+        except requests.Timeout:
+            print(f"      [XAI-IMG] TIMEOUT after {self.XAI_TIMEOUT}s")
+        except Exception as e:
+            print(f"      [XAI-IMG] ERROR: {type(e).__name__}: {e}")
         return None
 
     def _make_gradient(self, width=1024, height=768, colors=None) -> Image.Image:

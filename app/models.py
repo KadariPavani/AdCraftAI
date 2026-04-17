@@ -96,6 +96,7 @@ class BrandMatch:
 @dataclass
 class AdContent:
     brand_name: str = ""
+    product_name: str = ""
     headline: str = ""
     tagline: str = ""
     features: List[str] = field(default_factory=list)

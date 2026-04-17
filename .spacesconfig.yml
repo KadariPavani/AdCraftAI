@@ -1,0 +1,36 @@
+# Hugging Face Spaces Configuration
+# For MAdVerse (AdCraft AI) deployment
+
+# SDK type - we use Docker for full control
+sdk: docker
+
+# Port the application runs on inside the container
+# Must match the PORT in Dockerfile/start.sh (default: 7860)
+app_port: 7860
+
+# Hardware tier
+# - cpu-basic: Free tier (2 vCPU, 16 GB RAM) - RECOMMENDED for this app
+# - cpu-upgrade: 8 vCPU, 32 GB RAM ($0.03/hour)
+# - t4-small: T4 GPU + 8 vCPU, 32 GB RAM ($0.60/hour)
+# - t4-medium: T4 GPU + 16 vCPU, 64 GB RAM ($1.05/hour)
+#
+# Note: This app works perfectly on FREE cpu-basic tier!
+# GPU not needed - we use CPU-optimized PyTorch and external image APIs.
+hardware: cpu-basic
+
+# Python version (used for SDK: gradio/streamlit, not relevant for Docker)
+# python_version: 3.11
+
+# Startup duration before health check (in seconds)
+# Our app needs ~60-90s to load FAISS index and models
+startup_duration: 120
+
+# Enable Space to access the internet (required for API calls)
+enable_internet: true
+
+# Build timeout (in seconds)
+# Our Docker image takes ~5-10 minutes to build
+build_timeout: 1800
+
+# Disable automatic Space sleeping (optional, for persistent demos)
+# disable_sleep: false

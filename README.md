@@ -58,6 +58,7 @@ Optional:
 - `GROQ_API_KEY`
 - `TOGETHER_API_KEY`
 - `ANTHROPIC_API_KEY`
+- `HF_IMG2IMG_PROVIDERS` - Comma-separated provider order for FLUX img2img (default: `fal-ai,blackforestlabs,replicate,together,auto`)
 - `PORT` - defaults to `8000` locally
 
 ## Local setup after clone
@@ -174,6 +175,17 @@ docker-compose logs -f
 4. Compose the visual creative
 5. Save the result as a product if needed
 6. Share the product through the hub page
+
+### `/api/generate` optional form fields
+
+- `query` - Alias for `prompt` (either one is accepted)
+- `model` - FLUX model preference:
+  - `flux1-kontext-dev` (recommended for uploaded product image editing)
+  - `flux1-redux-dev`
+  - `flux2-dev`
+  - `flux2-pro`
+  - `flux2-max`
+- `style` - Extra instruction to enforce ad style/quality in the pipeline
 
 ## Supported content
 
