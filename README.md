@@ -1,3 +1,13 @@
+---
+title: AdkraftAI
+emoji: 🚀
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # MAdVerse API Backend
 
 FastAPI backend for ad generation and AdCraft_AI integration.
