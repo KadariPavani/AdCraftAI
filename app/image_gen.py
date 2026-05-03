@@ -88,9 +88,20 @@ class ImageGenerator:
         self.xai_image_model = xai_image_model
         raw_providers = os.getenv(
             "HF_IMG2IMG_PROVIDERS",
-            "fal-ai,blackforestlabs,replicate,together,auto"
+            "fal-ai,black-forest-labs,replicate,auto"
         )
-        self.hf_img2img_providers = [p.strip() for p in raw_providers.split(",") if p.strip()]
+        provider_aliases = {
+            "blackforestlabs": "black-forest-labs",
+            "black_forest_labs": "black-forest-labs",
+            "black-forest-labs": "black-forest-labs",
+        }
+        providers: list[str] = []
+        for p in raw_providers.split(","):
+            normalized = p.strip().lower()
+            if not normalized:
+                continue
+            providers.append(provider_aliases.get(normalized, normalized))
+        self.hf_img2img_providers = providers
 
     @staticmethod
     def _decode_image_any(payload) -> Optional[Image.Image]:
@@ -118,6 +129,31 @@ class ImageGenerator:
                 if img is not None:
                     return img
         return None
+
+    @staticmethod
+    def _resize_to_target_preserving_subject(
+        image: Image.Image,
+        width: int,
+        height: int,
+    ) -> Image.Image:
+        """Resize without stretching the subject; center it on a soft blurred backdrop."""
+        src = image.convert("RGB")
+        if src.size == (width, height):
+            return src
+
+        scale = min(width / src.width, height / src.height)
+        fit_w = max(1, int(round(src.width * scale)))
+        fit_h = max(1, int(round(src.height * scale)))
+        foreground = src.resize((fit_w, fit_h), Image.LANCZOS)
+
+        if (fit_w, fit_h) == (width, height):
+            return foreground
+
+        backdrop = src.resize((width, height), Image.LANCZOS).filter(ImageFilter.GaussianBlur(20))
+        x = (width - fit_w) // 2
+        y = (height - fit_h) // 2
+        backdrop.paste(foreground, (x, y))
+        return backdrop
 
     @classmethod
     def _normalize_model_name(cls, model_name: Optional[str]) -> str:
@@ -316,6 +352,13 @@ class ImageGenerator:
         if client_img is not None:
             return client_img
 
+        # Kontext/Redux/FLUX.2 image-to-image models are provider-only in most HF setups.
+        # Legacy hf-inference endpoint returns "Model not supported by provider hf-inference".
+        legacy_unsupported = any(tag in model_id.lower() for tag in ("kontext", "redux", "flux.2"))
+        if legacy_unsupported:
+            print("      [HF-IMG2IMG] Skipping legacy hf-inference fallback for provider-only model")
+            return None
+
         endpoint = self.HF_MODEL_ENDPOINT.format(model_id=model_id)
         print(f"      [HF-IMG2IMG] Model: {model_label}")
         print(f"      [HF-IMG2IMG] URL: {endpoint}")
@@ -357,7 +400,7 @@ class ImageGenerator:
                 print("      [HF-IMG2IMG] Failed to decode image payload")
                 return None
             print(f"      [HF-IMG2IMG] SUCCESS! Image decoded: {decoded.size}")
-            return decoded.convert("RGB")
+            return self._resize_to_target_preserving_subject(decoded, width, height)
         except requests.Timeout:
             print(f"      [HF-IMG2IMG] TIMEOUT after {self.HF_TIMEOUT}s")
         except Exception as e:
@@ -383,7 +426,10 @@ class ImageGenerator:
 
         providers = self.hf_img2img_providers or ["auto"]
         print(f"      [HF-IMG2IMG-CLIENT] Providers: {providers}")
+        credits_depleted = False
         for provider in providers:
+            if credits_depleted:
+                break
             client_kwargs = {"api_key": self.hf_token}
             if provider != "auto":
                 client_kwargs["provider"] = provider
@@ -404,9 +450,7 @@ class ImageGenerator:
                 if decoded is None:
                     print(f"      [HF-IMG2IMG-CLIENT] Provider {provider} returned undecodable payload")
                     continue
-                decoded = decoded.convert("RGB")
-                if decoded.size != (width, height):
-                    decoded = decoded.resize((width, height), Image.LANCZOS)
+                decoded = self._resize_to_target_preserving_subject(decoded, width, height)
                 print(f"      [HF-IMG2IMG-CLIENT] SUCCESS via {provider}: {decoded.size} | time={elapsed:.1f}s")
                 return decoded
             except TypeError:
@@ -431,15 +475,21 @@ class ImageGenerator:
                     if decoded is None:
                         print(f"      [HF-IMG2IMG-CLIENT] Alternate signature undecodable for {provider}")
                         continue
-                    decoded = decoded.convert("RGB")
-                    if decoded.size != (width, height):
-                        decoded = decoded.resize((width, height), Image.LANCZOS)
+                    decoded = self._resize_to_target_preserving_subject(decoded, width, height)
                     print(f"      [HF-IMG2IMG-CLIENT] SUCCESS via {provider} (alt): {decoded.size} | time={elapsed:.1f}s")
                     return decoded
                 except Exception as e:
                     print(f"      [HF-IMG2IMG-CLIENT] Provider {provider} failed (alt): {type(e).__name__}: {e}")
+                    msg = str(e)
+                    if "402" in msg or "Payment Required" in msg or "depleted your monthly included credits" in msg:
+                        credits_depleted = True
+                        print("      [HF-IMG2IMG-CLIENT] Credits depleted; stopping further provider attempts")
             except Exception as e:
                 print(f"      [HF-IMG2IMG-CLIENT] Provider {provider} failed: {type(e).__name__}: {e}")
+                msg = str(e)
+                if "402" in msg or "Payment Required" in msg or "depleted your monthly included credits" in msg:
+                    credits_depleted = True
+                    print("      [HF-IMG2IMG-CLIENT] Credits depleted; stopping further provider attempts")
         print("      [HF-IMG2IMG-CLIENT] All providers failed, falling back to legacy endpoint call")
         return None
 

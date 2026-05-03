@@ -1006,6 +1006,9 @@ class AdCraftPipeline:
                 prompt_goal = (
                     "Generate an image-editing prompt for uploaded product enhancement. "
                     "The output image must contain only the real product with realistic scene lighting. "
+                    "Keep the entire product visible with original aspect ratio, no stretching, no warping, no cropping. "
+                    "Product should be slightly smaller in frame (about 55-65% of frame height) with clean negative space for content layout. "
+                    "Use cinematic composition flow with layered depth and premium ad mood. "
                     "No text, no letters, no logos, no watermarks, no slogans, no CTA buttons, no duplicate products."
                 )
             else:
@@ -1022,7 +1025,7 @@ class AdCraftPipeline:
                         "1. The PRODUCT must be the EXACT product described — be very specific about what the "
                         "product looks like. For example, 'gold bangles' should show BANGLES (circular wrist "
                         "jewelry), NOT earrings or necklaces. Describe the exact product shape, style, and appearance.\n"
-                        "2. Show the product PROMINENTLY and ACCURATELY in the center of the image.\n"
+                        "2. Show the product ACCURATELY with balanced composition and no distortion.\n"
                         + (
                             "3. Do NOT generate text overlays. NO letters, NO words, NO logos, NO watermarks, NO CTA buttons.\n"
                             if uploaded_flow else
@@ -1045,6 +1048,10 @@ class AdCraftPipeline:
                         + (f"Scene: {scene_desc}\n" if scene_desc else "")
                         + (
                             f"\nIMPORTANT: This is uploaded-image enhancement mode. Keep ONE product only. "
+                            f"Keep full product visible with original aspect ratio; no stretch, no squeeze, no crop. "
+                            f"Keep product slightly smaller in frame (~55-65% frame height), centered with breathing room around it. "
+                            f"Leave clean negative space so ad content can be placed cleanly. "
+                            f"Use cinematic flow: warm key light, soft rim light, subtle depth, elegant premium mood. "
                             f"No text overlays or graphic typography in the generated image.\n"
                             if uploaded_flow else
                             (
@@ -1066,7 +1073,9 @@ class AdCraftPipeline:
                         diffusion_prompt = (
                             f"{ai_prompt.strip()}, "
                             f"ultra-realistic single-product photography, studio-grade detail, "
-                            f"clean composition, natural lighting, premium color grading, "
+                            f"cinematic clean composition, natural lighting, premium color grading, "
+                            f"full product visible, preserve original product aspect ratio, no stretching or geometric distortion, "
+                            f"product scaled slightly smaller in frame (around 55-65% frame height), leave balanced negative space for ad content, "
                             f"no text, no letters, no logos, no watermark, "
                             f"single product only, no duplicate product instances, "
                             f"8k commercial product photography"
@@ -1098,6 +1107,9 @@ class AdCraftPipeline:
                            f"Elegant warm studio key light with soft rim light and clean depth. ")
                         + (f"Key features visible: {features_text}. " if features_text else "")
                         + f"Single product only, no duplicate objects. "
+                        f"Full product visible with original aspect ratio, no stretching, no warping, no crop. "
+                        f"Product slightly smaller in frame (about 55-65% frame height) with clean negative space for content placement. "
+                        f"Cinematic composition flow with layered depth, subtle vignette, premium commercial mood. "
                         f"No text, no letters, no logos, no watermark, no typography overlays. "
                         f"Natural premium background, sharp details, accurate product geometry, 8k quality."
                     )
@@ -1214,9 +1226,12 @@ class AdCraftPipeline:
             if uploaded_image:
                 print(f"  [IMAGE] Using uploaded image (model-based img2img enhancement)")
                 print(f"  [IMAGE] Original size: {uploaded_image.size}")
-                print(f"  [IMAGE] Note: Stage 6 builds full-frame cinematic poster from this image (no background cutout).")
+                print(f"  [IMAGE] Note: Stage 6 builds cinematic hero-product pamphlet from this image.")
                 edit_prompt = (
                     f"{diffusion_prompt}. Preserve the exact product shape, logo, materials, and proportions. "
+                    f"Keep the complete product visible with original aspect ratio; no stretch, squeeze, or crop. "
+                    f"Scale product slightly smaller in frame (about 55-65% frame height) and maintain clean negative space for content. "
+                    f"Follow cinematic composition flow with realistic layered depth and premium lighting. "
                     f"Output must be a real advertisement-ready product visual with photorealistic quality."
                 )
                 print(f"  [IMAGE] Running image-to-image enhancement for uploaded image...")
@@ -1234,11 +1249,30 @@ class AdCraftPipeline:
                     result.image_generator_used = method
                     print(f"  [IMAGE] Uploaded image enhanced via model pipeline: {method}")
                 else:
-                    print(f"  [IMAGE] Model-based img2img unavailable; falling back to local enhancement")
+                    print(f"  [IMAGE] Model-based img2img unavailable; trying alternate model styling pass")
+                    alt_prompt = (
+                        f"{edit_prompt} Create cinematic product-ad background only. "
+                        f"Do not add extra products, logos, labels, or text."
+                    )
+                    alt_img, alt_method = self.image_gen.generate(
+                        prompt=alt_prompt,
+                        negative_prompt=DEFAULT_NEGATIVE_PROMPT,
+                        width=1080,
+                        height=1080,
+                        model_preference="flux1-schnell",
+                    )
+
                     enhanced_img = self.enhancer.auto_enhance(uploaded_image)
-                    uploaded_palette_source = enhanced_img
-                    product_img = enhanced_img
-                    result.image_generator_used = "uploaded_local_enhance"
+                    if alt_img is not None and alt_method != "gradient_fallback":
+                        uploaded_palette_source = alt_img
+                        product_img = enhanced_img
+                        result.image_generator_used = f"uploaded_local_enhance+{alt_method}_style_fallback"
+                        print(f"  [IMAGE] Alternate model styling succeeded: {alt_method}")
+                    else:
+                        print(f"  [IMAGE] Alternate model styling unavailable; falling back to local enhancement")
+                        uploaded_palette_source = enhanced_img
+                        product_img = enhanced_img
+                        result.image_generator_used = "uploaded_local_enhance"
                 print(f"  [IMAGE] Enhanced size: {product_img.size}")
             else:
                 print(f"  [IMAGE] Starting COMPLETE AD image generation (all text/buttons/CTAs in image):")
