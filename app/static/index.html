@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AdCraft AI - Ad Generation Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .card-hover { transition: all 0.3s ease; }
+        .card-hover:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(0,0,0,0.12); }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .spinner { border: 3px solid #e5e7eb; border-top: 3px solid #111827; border-radius: 50%; width: 40px; height: 40px; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .pulse-dot { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .tag { display: inline-block; padding: 2px 10px; border-radius: 9999px; font-size: 12px; font-weight: 500; margin: 2px; }
+        .copy-btn { cursor: pointer; transition: all 0.2s; }
+        .copy-btn:hover { color: #111827; }
+        .copy-btn.copied { color: #10b981; }
+        #imagePreview { max-height: 200px; object-fit: contain; }
+        .lang-chip { cursor: pointer; padding: 4px 12px; border-radius: 9999px; font-size: 13px; border: 1px solid #d1d5db; transition: all 0.2s; user-select: none; }
+        .lang-chip.selected { background: #111827; color: white; border-color: #111827; }
+        .lang-chip:hover { border-color: #9ca3af; }
+        .tab-btn { padding: 8px 20px; border-radius: 8px; font-weight: 500; transition: all 0.2s; cursor: pointer; }
+        .tab-btn.active { background: #111827; color: white; }
+        .tab-btn:not(.active) { color: #6b7280; }
+        .tab-btn:not(.active):hover { background: #f3f4f6; color: #111827; }
+        #extractedPanel .space-y-2 > div:last-child { border-bottom: none !important; }
+        #missingFieldInputs input:focus { background: #fffbeb; }
+        #promptInput::placeholder { color: #9ca3af; font-size: 12.5px; line-height: 1.5; }
+        /* Step Wizard */
+        .step-dot { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; transition: all 0.2s ease; flex-shrink: 0; }
+        .step-dot.active { background: #111827; color: white; }
+        .step-dot.completed { background: #10b981; color: white; }
+        .step-dot.upcoming { background: #e5e7eb; color: #9ca3af; }
+        .step-line { height: 2px; flex: 1; transition: background 0.2s ease; }
+        .step-line.completed { background: #10b981; }
+        .step-line.upcoming { background: #e5e7eb; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <!-- Navigation -->
+    <nav class="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-14">
+                <div class="flex items-center space-x-2.5 cursor-pointer" onclick="showPage('dashboard')">
+                    <svg class="w-5 h-5 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    <span class="font-bold text-gray-900 text-base tracking-tight">AdCraft AI</span>
+                </div>
+                <div class="flex items-center space-x-1">
+                    <button onclick="showPage('dashboard')" class="tab-btn text-sm" id="nav-dashboard">Dashboard</button>
+                    <button onclick="showPage('generate')" class="tab-btn text-sm" id="nav-generate">Generate</button>
+                    <button onclick="showPage('products')" class="tab-btn text-sm" id="nav-products">Products</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- Dashboard Page -->
+        <div id="page-dashboard" class="page fade-in">
+
+            <!-- Header -->
+            <div class="flex flex-col md:flex-row md:items-end md:justify-between mb-8">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">Dashboard</h1>
+                    <p class="text-gray-500 text-sm mt-1">Overview of your ad generation workspace</p>
+                </div>
+                <button onclick="showPage('generate')" class="mt-4 md:mt-0 bg-gray-900 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition cursor-pointer flex items-center space-x-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    <span>New Ad Creative</span>
+                </button>
+            </div>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+                    <div class="text-sm text-gray-500">Reference Ads</div>
+                    <div class="text-2xl font-bold text-gray-900 mt-1" id="stat-vectors">--</div>
+                    <div class="text-xs text-gray-400 mt-1">in dataset</div>
+                </div>
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+                    <div class="text-sm text-gray-500">Known Brands</div>
+                    <div class="text-2xl font-bold text-gray-900 mt-1" id="stat-brands">--</div>
+                    <div class="text-xs text-gray-400 mt-1">across 12 categories</div>
+                </div>
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+                    <div class="text-sm text-gray-500">Your Products</div>
+                    <div class="text-2xl font-bold text-gray-900 mt-1" id="stat-products">--</div>
+                    <div class="text-xs text-gray-400 mt-1">in catalog</div>
+                </div>
+                <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
+                    <div class="text-sm text-gray-500">Languages</div>
+                    <div class="text-2xl font-bold text-gray-900 mt-1" id="stat-languages">25+</div>
+                    <div class="text-xs text-gray-400 mt-1">supported</div>
+                </div>
+            </div>
+
+            <!-- Two Column: Quick Start + What You Get -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Quick Start -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Quick Start</h2>
+                    <div class="space-y-3">
+                        <div class="flex items-center p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition cursor-pointer" onclick="showPage('generate')">
+                            <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                            </div>
+                            <div class="ml-4 flex-1">
+                                <div class="font-medium text-gray-900 text-sm">Generate Ad Creative</div>
+                                <div class="text-gray-500 text-xs mt-0.5">Describe a product and get HD pamphlets, captions, and hashtags</div>
+                            </div>
+                            <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </div>
+                        <div class="flex items-center p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition cursor-pointer" onclick="showPage('products'); setTimeout(() => document.getElementById('createProductBtn').click(), 100)">
+                            <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            </div>
+                            <div class="ml-4 flex-1">
+                                <div class="font-medium text-gray-900 text-sm">Add Product to Catalog</div>
+                                <div class="text-gray-500 text-xs mt-0.5">Save product details and images for repeated ad generation</div>
+                            </div>
+                            <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </div>
+                        <div class="flex items-center p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition cursor-pointer" onclick="showPage('products')">
+                            <div class="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                            </div>
+                            <div class="ml-4 flex-1">
+                                <div class="font-medium text-gray-900 text-sm">View Product Catalog</div>
+                                <div class="text-gray-500 text-xs mt-0.5">Manage products, view hub links, and track analytics</div>
+                            </div>
+                            <svg class="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- What Each Generation Includes -->
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <h2 class="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">What Each Generation Includes</h2>
+                    <br>
+                    <div class="grid grid-cols-2 gap-x-6 gap-y-5">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 bg-indigo-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">HD Pamphlet</div>
+                                <div class="text-xs text-gray-400">1080 x 1080 ad creative</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z"/></svg>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">Product Copy</div>
+                                <div class="text-xs text-gray-400">Title and description</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 bg-pink-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-5 h-5 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">Instagram Caption</div>
+                                <div class="text-xs text-gray-400">Ready to post</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">WhatsApp Copy</div>
+                                <div class="text-xs text-gray-400">Share-ready message</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">Hashtags</div>
+                                <div class="text-xs text-gray-400">Auto-generated tags</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 bg-cyan-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <svg class="w-5 h-5 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/></svg>
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-gray-900">Translations</div>
+                                <div class="text-xs text-gray-400">25+ languages</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Generate Page (Step Wizard) -->
+        <div id="page-generate" class="page hidden fade-in">
+            <h1 class="text-2xl font-bold text-gray-900 mb-1">Generate Ad Creative</h1>
+            <p class="text-gray-500 text-sm mb-6">Follow the steps to create a professional ad from your product details</p>
+
+            <!-- Step Progress Bar -->
+            <div class="bg-white rounded-xl p-5 shadow-sm border border-gray-100 mb-6">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-2"><div class="step-dot active" id="stepDot1">1</div><span class="text-sm font-medium text-gray-900 hidden sm:inline" id="stepLabel1">Product Details</span></div>
+                    <div class="step-line upcoming flex-1 mx-3" id="stepLine1"></div>
+                    <div class="flex items-center space-x-2"><div class="step-dot upcoming" id="stepDot2">2</div><span class="text-sm font-medium text-gray-400 hidden sm:inline" id="stepLabel2">Review & Enrich</span></div>
+                    <div class="step-line upcoming flex-1 mx-3" id="stepLine2"></div>
+                    <div class="flex items-center space-x-2"><div class="step-dot upcoming" id="stepDot3">3</div><span class="text-sm font-medium text-gray-400 hidden sm:inline" id="stepLabel3">Configure</span></div>
+                    <div class="step-line upcoming flex-1 mx-3" id="stepLine3"></div>
+                    <div class="flex items-center space-x-2"><div class="step-dot upcoming" id="stepDot4">4</div><span class="text-sm font-medium text-gray-400 hidden sm:inline" id="stepLabel4">Results</span></div>
+                </div>
+            </div>
+
+            <!-- STEP 1: Smart Prompt -->
+            <div id="wizardStep1" class="wizard-step fade-in">
+                <div class="max-w-3xl mx-auto">
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="block text-sm font-medium text-gray-700">Smart Product Prompt</label>
+                            <span class="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full font-medium">AI-Powered</span>
+                        </div>
+                        <textarea id="promptInput" rows="6" placeholder="Enter ALL product details in one go. Include brand, product name, type, size, material, color, price, features, target audience, and any ad scene description.
+
+Example: Nike Air Max 90 running shoes for men, sizes UK 7-12, black and white colorway, mesh upper with Air cushioning, priced at Rs 12,995, lightweight and breathable, perfect for daily running and gym workouts"
+                            class="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-gray-900 focus:border-gray-900 text-sm resize-none"></textarea>
+                        <div class="mt-3">
+                            <p class="text-xs font-medium text-gray-500 mb-2">Try an example:</p>
+                            <div class="flex flex-wrap gap-2">
+                                <button onclick="setSmartExample(this)" data-prompt="Kalyan Jewellers Tejasvi collection 22K gold bangles set of 4, weight 40 grams, price range Rs 1,80,000 - 2,50,000, traditional Indian design with intricate filigree work, BIS hallmarked, for women, available in sizes 2.4 to 2.8, perfect for weddings and festivals, show an Indian bride in red silk saree at luxury showroom" class="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-200 transition cursor-pointer">Kalyan Gold Bangles</button>
+                                <button onclick="setSmartExample(this)" data-prompt="Nike Air Max 90 men's running shoes, sizes UK 7-12, black/white/infrared colorway, mesh and leather upper, visible Air unit, price Rs 12,995, lightweight 300g, ideal for running and casual wear" class="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-200 transition cursor-pointer">Nike Air Max 90</button>
+                                <button onclick="setSmartExample(this)" data-prompt="Samsung Galaxy S24 Ultra smartphone, 6.8 inch Dynamic AMOLED display, 200MP camera, Snapdragon 8 Gen 3, 12GB RAM, 256GB storage, 5000mAh battery, titanium frame, price Rs 1,29,999, available in titanium black and violet" class="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-200 transition cursor-pointer">Samsung Galaxy S24</button>
+                                <button onclick="setSmartExample(this)" data-prompt="Bisleri mineral water 1 liter bottle, 10+2 international quality tests, source: protected underground springs, pH balanced, zero calories, available in 250ml 500ml 1L 2L packs, manufactured by Bisleri International" class="text-xs bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-200 transition cursor-pointer">Bisleri Water</button>
+                            </div>
+                            <p class="text-xs font-medium text-gray-500 mt-3 mb-2">New / Unknown brands:</p>
+                            <div class="flex flex-wrap gap-2">
+                                <button onclick="setSmartExample(this)" data-prompt="StrideFlex AeroGlide running shoes for men, lightweight mesh upper, breathable cushioning, UK 7-12, black and neon green, Rs 5499, ideal for sports and daily running" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition cursor-pointer">StrideFlex Shoes</button>
+                                <button onclick="setSmartExample(this)" data-prompt="NovaTech Pulse X1 wireless earbuds with 50hr battery life, active noise cancellation, Bluetooth 5.4, IPX7 waterproof, USB-C fast charging, for men, Rs 3999" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition cursor-pointer">NovaTech Earbuds</button>
+                                <button onclick="setSmartExample(this)" data-prompt="DermaCure vitamin C brightening face wash with niacinamide and salicylic acid, for oily skin, paraben free, 150ml, Rs 449, for men and women" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition cursor-pointer">DermaCure Face Wash</button>
+                                <button onclick="setSmartExample(this)" data-prompt="RaniGold bridal choker necklace set 22k gold with uncut polki diamonds, kundan work, BIS hallmarked, for women, wedding occasion, 85 grams, Rs 3,50,000, show Indian bride at luxury mandap" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition cursor-pointer">RaniGold Bridal Set</button>
+                                <button onclick="setSmartExample(this)" data-prompt="VoltRider Storm 200 electric motorcycle, 150km range, 8kW motor, dual disc brakes, matte black, Rs 1,85,000, show rider on open highway at sunset" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition cursor-pointer">VoltRider E-Bike</button>
+                                <button onclick="setSmartExample(this)" data-prompt="CrunchBox quinoa puffs 120g pack, tangy tomato flavor, baked not fried, high protein, gluten free, Rs 99" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-full hover:bg-indigo-100 transition cursor-pointer">CrunchBox Snacks</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="analyzeLoading" class="hidden bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center mb-4">
+                        <div class="spinner mx-auto mb-2" style="width:28px;height:28px;border-width:2px;"></div>
+                        <p class="text-gray-500 text-xs">AI is extracting product catalog details...</p>
+                    </div>
+                    <div class="flex justify-end items-center space-x-4">
+                        <label class="flex items-center space-x-2 cursor-pointer select-none" title="Uses AI for more accurate extraction (adds ~3-8s)">
+                            <input type="checkbox" id="useAiToggle" class="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+                            <span class="text-xs text-gray-500">AI-enhanced accuracy</span>
+                        </label>
+                        <button id="analyzeBtn" onclick="handleStep1Next()" class="bg-gray-900 text-white px-8 py-3 rounded-lg font-medium text-sm hover:bg-gray-800 transition flex items-center space-x-2 cursor-pointer">
+                            <span>Analyze &amp; Continue</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: Review & Enrich -->
+            <div id="wizardStep2" class="wizard-step hidden fade-in">
+                <div class="max-w-3xl mx-auto">
+                    <div id="extractedPanel" class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-4">
+                        <div id="completenessHeader" class="p-4 border-b border-gray-100">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-sm font-medium text-gray-700">Product Catalog Completeness</span>
+                                    <span id="categoryBadge" class="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full"></span>
+                                </div>
+                                <span id="completenessPercent" class="text-sm font-bold"></span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div id="completenessBar" class="h-2 rounded-full transition-all duration-500" style="width:0%"></div>
+                            </div>
+                        </div>
+                        <div id="missingFieldsSection" class="hidden p-4 bg-amber-50 border-b border-amber-100">
+                            <div class="flex items-start space-x-2 mb-3">
+                                <svg class="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"/></svg>
+                                <div>
+                                    <p class="text-sm font-medium text-amber-800">Missing required details</p>
+                                    <p class="text-xs text-amber-600 mt-0.5">Fill in the fields below for the best ad quality</p>
+                                </div>
+                            </div>
+                            <div id="missingFieldInputs" class="space-y-3"></div>
+                            <button onclick="submitMissingFields()" class="mt-3 bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-amber-700 transition w-full cursor-pointer">Update &amp; Re-validate</button>
+                        </div>
+                        <div id="allClearSection" class="hidden p-4 bg-green-50 border-b border-green-100">
+                            <div class="flex items-center space-x-2">
+                                <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                <p class="text-sm font-medium text-green-800">All required product details are present. Ready to generate!</p>
+                            </div>
+                        </div>
+                        <div id="brandStatusSection" class="hidden p-4 border-b border-gray-100">
+                            <div id="brandKnown" class="hidden">
+                                <div class="flex items-center space-x-2 mb-1"><span class="w-2 h-2 bg-green-500 rounded-full"></span><span class="text-sm font-medium text-gray-700">Brand found in dataset</span></div>
+                                <p class="text-xs text-gray-500 ml-4" id="brandKnownDetail"></p>
+                            </div>
+                            <div id="brandUnknown" class="hidden">
+                                <div class="flex items-center space-x-2 mb-1"><span class="w-2 h-2 bg-blue-500 rounded-full"></span><span class="text-sm font-medium text-gray-700">New brand (not yet in dataset)</span></div>
+                                <p class="text-xs text-gray-500 ml-4">Ad will be generated using AI and general category references.</p>
+                            </div>
+                            <div id="relatedBrandsRow" class="hidden mt-2 ml-4"><p class="text-xs text-gray-500 mb-1">Related brands in dataset:</p><div id="relatedBrandsList" class="flex flex-wrap gap-1"></div></div>
+                        </div>
+                        <div class="p-4">
+                            <p class="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">Extracted Product Data</p>
+                            <div id="extractedFieldsList" class="space-y-2"></div>
+                        </div>
+                        <div class="px-4 pb-4">
+                            <button onclick="toggleOptionalFields()" class="text-xs text-gray-600 font-medium hover:text-gray-900 flex items-center space-x-1 cursor-pointer">
+                                <svg id="optionalToggleIcon" class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                <span>Show optional fields to improve quality</span>
+                            </button>
+                            <div id="optionalFieldsPanel" class="hidden mt-3 space-y-3"></div>
+                        </div>
+                    </div>
+                    <div class="flex justify-between">
+                        <button onclick="goToStep(1)" class="bg-white border border-gray-200 text-gray-700 px-6 py-3 rounded-lg font-medium text-sm hover:bg-gray-50 transition flex items-center space-x-2 cursor-pointer">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                            <span>Previous</span>
+                        </button>
+                        <button onclick="goToStep(3)" class="bg-gray-900 text-white px-8 py-3 rounded-lg font-medium text-sm hover:bg-gray-800 transition flex items-center space-x-2 cursor-pointer">
+                            <span>Next</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 3: Configure -->
+            <div id="wizardStep3" class="wizard-step hidden fade-in">
+                <div class="max-w-3xl mx-auto">
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Product Image (Optional)</label>
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-gray-400 transition cursor-pointer" onclick="document.getElementById('imageInput').click()">
+                            <input type="file" id="imageInput" accept="image/*" class="hidden" onchange="previewImage(this)">
+                            <div id="uploadPlaceholder">
+                                <svg class="w-10 h-10 text-gray-400 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                <p class="text-sm text-gray-500">Click to upload or drag and drop</p>
+                                <p class="text-xs text-gray-400 mt-1">PNG, JPG up to 10MB</p>
+                            </div>
+                            <img id="imagePreview" class="hidden mx-auto rounded-lg" alt="Preview">
+                        </div>
+                        <button id="clearImageBtn" class="hidden mt-2 text-sm text-red-500 hover:text-red-700 cursor-pointer" onclick="clearImage()">Remove image</button>
+                    </div>
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-3">Target Languages</label>
+                        <div id="languageChips" class="flex flex-wrap gap-2"></div>
+                        <p class="text-xs text-gray-400 mt-3">Click to select/deselect. English is always included.</p>
+                    </div>
+                    <div class="flex justify-between">
+                        <button onclick="goToStep(2)" class="bg-white border border-gray-200 text-gray-700 px-6 py-3 rounded-lg font-medium text-sm hover:bg-gray-50 transition flex items-center space-x-2 cursor-pointer">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                            <span>Previous</span>
+                        </button>
+                        <button id="generateBtn" onclick="generateAd()" class="gradient-bg text-white px-8 py-3 rounded-lg font-semibold text-sm hover:opacity-90 transition flex items-center space-x-2 cursor-pointer">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                            <span>Generate Ad Creative</span>
+                        </button>
+                    </div>
+                    <div id="loadingPanel" class="hidden bg-white rounded-xl p-8 shadow-sm border border-gray-100 text-center mt-6">
+                        <div class="spinner mx-auto mb-4"></div>
+                        <p class="text-gray-700 font-medium" id="loadingText">Generating your ad creative...</p>
+                        <p class="text-gray-400 text-sm mt-2" id="loadingSubtext">This may take 30-90 seconds</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 4: Results -->
+            <div id="wizardStep4" class="wizard-step hidden fade-in">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="space-y-5">
+                        <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                            <div class="flex justify-between items-center mb-3">
+                                <h3 class="font-semibold text-gray-900">Generated Ad</h3>
+                                <a id="downloadPamphlet" href="#" download class="text-sm text-gray-600 hover:text-gray-900 font-medium">Download HD</a>
+                            </div>
+                            <img id="pamphletImage" class="w-full rounded-lg shadow-md" alt="Generated Pamphlet">
+                        </div>
+                        <div id="brandInfo" class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 hidden">
+                            <h3 class="font-semibold text-gray-900 mb-3">Brand Match</h3>
+                            <div class="grid grid-cols-2 gap-3 text-sm">
+                                <div><span class="text-gray-500">Brand:</span> <span id="brandName" class="font-medium text-gray-900"></span></div>
+                                <div><span class="text-gray-500">Confidence:</span> <span id="brandConfidence" class="font-medium text-gray-900"></span></div>
+                                <div><span class="text-gray-500">Category:</span> <span id="brandCategory" class="font-medium text-gray-900"></span></div>
+                                <div><span class="text-gray-500">Reference Ads:</span> <span id="brandCount" class="font-medium text-gray-900"></span></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="space-y-5">
+                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                            <h3 class="font-semibold text-gray-900 mb-4">Generated Content</h3>
+                            <div id="langTabs" class="flex flex-wrap gap-2 mb-4"></div>
+                            <div class="space-y-4" id="contentFields">
+                                <div><div class="flex justify-between items-center"><label class="text-xs font-medium text-gray-500 uppercase tracking-wider">Product Title</label><span class="copy-btn text-xs text-gray-400" onclick="copyText('resultTitle')">Copy</span></div><p id="resultTitle" class="text-gray-900 font-medium mt-1"></p></div>
+                                <div><div class="flex justify-between items-center"><label class="text-xs font-medium text-gray-500 uppercase tracking-wider">Description</label><span class="copy-btn text-xs text-gray-400" onclick="copyText('resultDesc')">Copy</span></div><p id="resultDesc" class="text-gray-700 text-sm mt-1"></p></div>
+                                <div><div class="flex justify-between items-center"><label class="text-xs font-medium text-gray-500 uppercase tracking-wider">Instagram Caption</label><span class="copy-btn text-xs text-gray-400" onclick="copyText('resultCaption')">Copy</span></div><p id="resultCaption" class="text-gray-700 text-sm mt-1"></p></div>
+                                <div><div class="flex justify-between items-center"><label class="text-xs font-medium text-gray-500 uppercase tracking-wider">WhatsApp Copy</label><span class="copy-btn text-xs text-gray-400" onclick="copyText('resultWhatsapp')">Copy</span></div><p id="resultWhatsapp" class="text-gray-700 text-sm mt-1"></p></div>
+                                <div><label class="text-xs font-medium text-gray-500 uppercase tracking-wider">Hashtags</label><div id="resultHashtags" class="mt-1"></div></div>
+                            </div>
+                        </div>
+                        <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                            <h3 class="font-semibold text-gray-900 mb-3">Pipeline Timings</h3>
+                            <div id="timings" class="space-y-2 text-sm"></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Save & Share Section -->
+                <div id="saveShareSection" class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mt-6">
+                    <h3 class="font-semibold text-gray-900 mb-4">Save & Share</h3>
+
+                    <!-- Save to Products -->
+                    <div id="saveProductPanel" class="mb-5">
+                        <p class="text-sm text-gray-500 mb-3">Save this ad as a product to get a shareable hub page and track engagement across platforms.</p>
+                        <button id="saveToProductBtn" onclick="saveGeneratedAsProduct()" class="w-full bg-gray-900 text-white px-6 py-3 rounded-lg font-medium text-sm hover:bg-gray-800 transition flex items-center justify-center space-x-2 cursor-pointer">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg>
+                            <span>Save to Products & Get Share Link</span>
+                        </button>
+                    </div>
+
+                    <!-- Saved Success + Hub Link + Social Share (hidden until saved) -->
+                    <div id="savedSuccessPanel" class="hidden">
+                        <div class="flex items-center space-x-2 mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <svg class="w-5 h-5 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-medium text-green-800">Saved to product catalog!</p>
+                                <p class="text-xs text-green-600 truncate" id="hubLinkDisplay"></p>
+                            </div>
+                            <button onclick="copySavedHubLink()" class="text-xs text-green-700 font-medium px-2 py-1 rounded hover:bg-green-100 cursor-pointer flex-shrink-0">Copy Link</button>
+                            <a id="openHubBtn" href="#" target="_blank" class="text-xs text-green-700 font-medium px-2 py-1 rounded hover:bg-green-100 cursor-pointer flex-shrink-0">Open Hub</a>
+                        </div>
+
+                        <!-- Social Media Share Grid -->
+                        <h4 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Share on Social Media</h4>
+                        <div class="grid grid-cols-4 gap-2 mb-3">
+                            <button onclick="shareTo('whatsapp')" class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-3 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition cursor-pointer">
+                                <svg class="w-5 h-5 mb-1 text-green-600" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.625.846 5.059 2.284 7.034L.789 23.492l4.624-1.467A11.955 11.955 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.75c-2.115 0-4.093-.657-5.727-1.778l-.41-.253-2.742.87.908-2.686-.278-.432A9.713 9.713 0 012.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75z"/></svg>
+                                WhatsApp
+                            </button>
+                            <button onclick="shareTo('instagram')" class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-3 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition cursor-pointer">
+                                <svg class="w-5 h-5 mb-1 text-pink-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>
+                                Instagram
+                            </button>
+                            <button onclick="shareTo('facebook')" class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-3 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition cursor-pointer">
+                                <svg class="w-5 h-5 mb-1 text-blue-700" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                                Facebook
+                            </button>
+                            <button onclick="shareTo('twitter')" class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-3 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition cursor-pointer">
+                                <svg class="w-5 h-5 mb-1 text-gray-900" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                                X (Twitter)
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-4 gap-2">
+                            <button onclick="shareTo('linkedin')" class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-3 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition cursor-pointer">
+                                <svg class="w-5 h-5 mb-1 text-blue-600" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                                LinkedIn
+                            </button>
+                            <button onclick="shareTo('telegram')" class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-3 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition cursor-pointer">
+                                <svg class="w-5 h-5 mb-1 text-sky-500" fill="currentColor" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                                Telegram
+                            </button>
+                            <button onclick="shareTo('pinterest')" class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-3 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition cursor-pointer">
+                                <svg class="w-5 h-5 mb-1 text-red-600" fill="currentColor" viewBox="0 0 24 24"><path d="M12.017 0C5.396 0 .029 5.367.029 11.987c0 5.079 3.158 9.417 7.618 11.162-.105-.949-.199-2.403.041-3.439.219-.937 1.406-5.957 1.406-5.957s-.359-.72-.359-1.781c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.207 0 1.031.397 2.138.893 2.738a.36.36 0 0 1 .083.345l-.333 1.36c-.053.22-.174.267-.402.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.607 7.464-6.227 7.464-1.216 0-2.359-.631-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146C9.57 23.812 10.763 24 12.017 24c6.624 0 11.99-5.367 11.99-11.988C24.007 5.367 18.641 0 12.017 0z"/></svg>
+                                Pinterest
+                            </button>
+                            <button onclick="shareTo('email')" class="card-hover flex flex-col items-center justify-center bg-white border border-gray-200 py-3 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-50 transition cursor-pointer">
+                                <svg class="w-5 h-5 mb-1 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                                Email
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-center mt-6">
+                    <button onclick="resetWizard()" class="bg-white border border-gray-200 text-gray-700 px-6 py-3 rounded-lg font-medium text-sm hover:bg-gray-50 transition flex items-center space-x-2 cursor-pointer">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                        <span>Generate Another Ad</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Products Page -->
+        <div id="page-products" class="page hidden fade-in">
+            <div class="flex flex-col md:flex-row md:items-end md:justify-between mb-6">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">Products</h1>
+                    <p class="text-gray-500 text-sm mt-1">Manage your product catalog and generate ads for saved items</p>
+                </div>
+                <button id="createProductBtn" onclick="toggleCreateForm()" class="mt-4 md:mt-0 bg-gray-900 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition cursor-pointer flex items-center space-x-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    <span>New Product</span>
+                </button>
+            </div>
+
+            <!-- Create Product Form -->
+            <div id="createProductForm" class="hidden bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-6 fade-in">
+                <div class="flex items-center justify-between mb-5">
+                    <h3 class="font-semibold text-gray-900">Add New Product</h3>
+                    <button onclick="toggleCreateForm()" class="text-gray-400 hover:text-gray-600 cursor-pointer">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Product Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="productName" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-gray-900 focus:border-gray-900" placeholder="e.g., Nike Air Max">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+                        <input type="text" id="productBrand" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-gray-900 focus:border-gray-900" placeholder="e.g., Nike">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                        <input type="text" id="productCategory" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-gray-900 focus:border-gray-900" placeholder="e.g., Footwear">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Price</label>
+                        <input type="text" id="productPrice" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-gray-900 focus:border-gray-900" placeholder="e.g., 4999">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                        <textarea id="productDescription" rows="2" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-gray-900 focus:border-gray-900 resize-none" placeholder="Brief product description..."></textarea>
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Product Images (up to 3)</label>
+                        <input type="file" id="productImages" accept="image/*" multiple class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 file:cursor-pointer">
+                    </div>
+                </div>
+                <div class="flex space-x-3 mt-5 pt-4 border-t border-gray-100">
+                    <button onclick="createProduct()" class="bg-gray-900 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 cursor-pointer">Create Product</button>
+                    <button onclick="toggleCreateForm()" class="text-gray-500 px-6 py-2.5 rounded-lg text-sm hover:bg-gray-50 cursor-pointer">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Product List -->
+            <div id="productList" class="space-y-3"></div>
+            <div id="noProducts" class="hidden text-center py-20">
+                <svg class="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+                <p class="text-gray-500 font-medium">No products yet</p>
+                <p class="text-gray-400 text-sm mt-1">Add your first product to start generating ads</p>
+                <button onclick="toggleCreateForm()" class="mt-4 text-gray-900 text-sm font-medium hover:text-gray-600 cursor-pointer">+ Add a product</button>
+            </div>
+        </div>
+
+        <!-- Product Detail Page -->
+        <div id="page-product-detail" class="page hidden fade-in">
+            <button onclick="showPage('products')" class="text-gray-500 text-sm font-medium mb-4 hover:text-gray-900 flex items-center cursor-pointer">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                Back to Products
+            </button>
+            <div id="productDetailContent"></div>
+        </div>
+    </main>
+
+    <script>
+        // ===== State =====
+        let languages = {};
+        let selectedLangs = new Set(['en']);
+        let currentResult = null;
+        let currentLang = 'en';
+        let parsedPromptData = null; // Smart Prompt parsed data
+        let currentStep = 1;
+
+        // ===== Init =====
+        async function init() {
+            try {
+                const [statsRes, langsRes] = await Promise.all([
+                    fetch('/api/stats').catch(() => null),
+                    fetch('/api/languages').catch(() => null),
+                ]);
+                if (statsRes && statsRes.ok) {
+                    const stats = await statsRes.json();
+                    document.getElementById('stat-vectors').textContent = (stats.total_vectors || 0).toLocaleString();
+                    document.getElementById('stat-brands').textContent = stats.total_brands || '--';
+                    document.getElementById('stat-products').textContent = stats.products || 0;
+                }
+                if (langsRes && langsRes.ok) {
+                    const data = await langsRes.json();
+                    languages = data.languages || {};
+                    renderLanguageChips();
+                }
+            } catch (e) {
+                console.log('Stats loading deferred - pipeline initializing');
+            }
+        }
+
+        // ===== Navigation =====
+        function showPage(page) {
+            document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            const el = document.getElementById('page-' + page);
+            if (el) { el.classList.remove('hidden'); el.classList.add('fade-in'); }
+            const nav = document.getElementById('nav-' + page);
+            if (nav) nav.classList.add('active');
+            if (page === 'products') loadProducts();
+            if (page === 'dashboard') init();
+        }
+
+        // ===== Wizard Step Navigation =====
+        function goToStep(step) {
+            if (step === 2 && !parsedPromptData) { handleStep1Next(); return; }
+            currentStep = step;
+            document.querySelectorAll('.wizard-step').forEach(s => s.classList.add('hidden'));
+            const target = document.getElementById('wizardStep' + step);
+            if (target) { target.classList.remove('hidden'); target.classList.add('fade-in'); }
+            for (let i = 1; i <= 4; i++) {
+                const dot = document.getElementById('stepDot' + i);
+                const label = document.getElementById('stepLabel' + i);
+                const line = document.getElementById('stepLine' + (i - 1));
+                if (dot) {
+                    dot.className = 'step-dot ' + (i < step ? 'completed' : i === step ? 'active' : 'upcoming');
+                    if (i < step) dot.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>';
+                    else dot.textContent = i;
+                }
+                if (label) label.className = 'text-sm font-medium hidden sm:inline ' + (i <= step ? 'text-gray-900' : 'text-gray-400');
+                if (line) line.className = 'step-line flex-1 mx-3 ' + (i <= step ? 'completed' : 'upcoming');
+            }
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function handleStep1Next() {
+            const prompt = document.getElementById('promptInput').value.trim();
+            if (!prompt) { alert('Please enter product details first'); return; }
+            if (prompt.length < 10) { alert('Please enter more product details for better results'); return; }
+            await analyzePrompt();
+            if (parsedPromptData) goToStep(2);
+        }
+
+        function resetWizard() {
+            parsedPromptData = null;
+            currentResult = null;
+            savedProductId = null;
+            savedHubUrl = null;
+            document.getElementById('promptInput').value = '';
+            document.getElementById('extractedFieldsList').innerHTML = '';
+            // Reset save/share panel
+            document.getElementById('saveProductPanel').classList.remove('hidden');
+            document.getElementById('savedSuccessPanel').classList.add('hidden');
+            clearImage();
+            goToStep(1);
+        }
+
+        // ===== Language Chips =====
+        function renderLanguageChips() {
+            const container = document.getElementById('languageChips');
+            container.innerHTML = '';
+            const popular = ['en', 'hi', 'bn', 'ta', 'te', 'kn', 'ml', 'mr', 'gu', 'pa', 'ur', 'es', 'fr', 'de', 'ar', 'ja', 'ko', 'zh-CN'];
+            for (const code of popular) {
+                const name = languages[code] || code;
+                const chip = document.createElement('span');
+                chip.className = 'lang-chip' + (selectedLangs.has(code) ? ' selected' : '');
+                chip.textContent = name;
+                chip.onclick = () => {
+                    if (code === 'en') return;
+                    if (selectedLangs.has(code)) selectedLangs.delete(code);
+                    else selectedLangs.add(code);
+                    chip.classList.toggle('selected');
+                };
+                container.appendChild(chip);
+            }
+        }
+
+        // ===== Smart Prompt =====
+        function setSmartExample(btn) {
+            document.getElementById('promptInput').value = btn.dataset.prompt;
+            parsedPromptData = null;
+        }
+
+        async function analyzePrompt() {
+            const prompt = document.getElementById('promptInput').value.trim();
+            if (!prompt) { alert('Please enter product details first'); return; }
+            if (prompt.length < 10) { alert('Please enter more product details for better results'); return; }
+
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            const analyzeLoading = document.getElementById('analyzeLoading');
+
+            analyzeBtn.disabled = true;
+            analyzeBtn.classList.add('opacity-50');
+            analyzeLoading.classList.remove('hidden');
+
+            try {
+                const formData = new FormData();
+                formData.append('prompt', prompt);
+                const useAi = document.getElementById('useAiToggle')?.checked ? 'true' : 'false';
+                formData.append('use_ai', useAi);
+
+                const resp = await fetch('/api/parse-prompt', { method: 'POST', body: formData });
+                const data = await resp.json();
+
+                parsedPromptData = data;
+                displayParsedData(data);
+            } catch (e) {
+                alert('Error analyzing prompt: ' + e.message);
+            } finally {
+                analyzeBtn.disabled = false;
+                analyzeBtn.classList.remove('opacity-50');
+                analyzeLoading.classList.add('hidden');
+            }
+        }
+
+        function displayParsedData(data) {
+
+            // Category badge
+            document.getElementById('categoryBadge').textContent = data.category_display || data.category;
+
+            // Completeness bar
+            const pct = Math.round((data.completeness || 0) * 100);
+            document.getElementById('completenessPercent').textContent = pct + '%';
+            document.getElementById('completenessPercent').className = 'text-sm font-bold ' +
+                (pct >= 100 ? 'text-green-600' : pct >= 60 ? 'text-amber-600' : 'text-red-600');
+
+            const bar = document.getElementById('completenessBar');
+            bar.style.width = pct + '%';
+            bar.className = 'h-2 rounded-full transition-all duration-500 ' +
+                (pct >= 100 ? 'bg-green-500' : pct >= 60 ? 'bg-amber-500' : 'bg-red-500');
+
+            // Missing required fields
+            const missingSection = document.getElementById('missingFieldsSection');
+            const allClearSection = document.getElementById('allClearSection');
+            const missingKeys = Object.keys(data.missing_required || {});
+
+            if (missingKeys.length > 0) {
+                missingSection.classList.remove('hidden');
+                allClearSection.classList.add('hidden');
+
+                const container = document.getElementById('missingFieldInputs');
+                container.innerHTML = '';
+                for (const [field, desc] of Object.entries(data.missing_required)) {
+                    const div = document.createElement('div');
+                    div.innerHTML = `
+                        <label class="block text-xs font-medium text-amber-800 mb-1">${formatFieldName(field)} <span class="text-red-500">*</span></label>
+                        <input type="text" id="missing_${field}" placeholder="${desc}"
+                            class="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-amber-500 focus:border-amber-500 bg-white">
+                    `;
+                    container.appendChild(div);
+                }
+            } else {
+                missingSection.classList.add('hidden');
+                allClearSection.classList.remove('hidden');
+            }
+
+            // Brand status
+            const brandStatusSection = document.getElementById('brandStatusSection');
+            const brandKnown = document.getElementById('brandKnown');
+            const brandUnknown = document.getElementById('brandUnknown');
+            const relatedBrandsRow = document.getElementById('relatedBrandsRow');
+
+            if (data.brand_status) {
+                brandStatusSection.classList.remove('hidden');
+                if (data.brand_status === 'known') {
+                    brandKnown.classList.remove('hidden');
+                    brandUnknown.classList.add('hidden');
+                    const detail = document.getElementById('brandKnownDetail');
+                    const parts = [];
+                    if (data.dataset_brand) parts.push(`Matched: ${data.dataset_brand.replace(/_/g, ' ')}`);
+                    if (data.dataset_category) parts.push(`Category: ${data.dataset_category.replace(/_/g, ' ')}`);
+                    if (data.extracted && data.extracted.image_count) parts.push(`${data.extracted.image_count} reference ads`);
+                    detail.textContent = parts.join(' | ');
+                } else {
+                    brandKnown.classList.add('hidden');
+                    brandUnknown.classList.remove('hidden');
+                }
+
+                if (data.related_brands && data.related_brands.length > 0) {
+                    relatedBrandsRow.classList.remove('hidden');
+                    const list = document.getElementById('relatedBrandsList');
+                    list.innerHTML = '';
+                    data.related_brands.forEach(b => {
+                        const chip = document.createElement('span');
+                        chip.className = 'text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full';
+                        chip.textContent = b;
+                        list.appendChild(chip);
+                    });
+                } else {
+                    relatedBrandsRow.classList.add('hidden');
+                }
+            } else {
+                brandStatusSection.classList.add('hidden');
+            }
+
+            // Extracted fields table
+            const fieldsList = document.getElementById('extractedFieldsList');
+            fieldsList.innerHTML = '';
+            const extracted = data.extracted || {};
+            const displayOrder = ['brand', 'product_name', 'product_type', 'category', 'target_audience',
+                'size_range', 'material', 'color', 'price', 'key_features', 'pack_size', 'occasion',
+                'manufacturer', 'weight', 'warranty', 'flavor', 'scene_description'];
+
+            for (const field of displayOrder) {
+                const val = extracted[field];
+                if (!val) continue;
+                const row = document.createElement('div');
+                row.className = 'flex items-start justify-between py-1.5 border-b border-gray-50 last:border-0';
+                const isRequired = data.all_required && data.all_required[field];
+                row.innerHTML = `
+                    <span class="text-xs text-gray-500 w-28 flex-shrink-0">${formatFieldName(field)}${isRequired ? ' <span class="text-red-400">*</span>' : ''}</span>
+                    <span class="text-sm text-gray-900 font-medium text-right flex-1">${escapeHtml(val)}</span>
+                `;
+                fieldsList.appendChild(row);
+            }
+
+            // Optional fields panel
+            const optionalPanel = document.getElementById('optionalFieldsPanel');
+            optionalPanel.innerHTML = '';
+            for (const [field, desc] of Object.entries(data.all_optional || {})) {
+                if (extracted[field]) continue; // Already has a value
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <label class="block text-xs font-medium text-gray-600 mb-1">${formatFieldName(field)}</label>
+                    <input type="text" id="optional_${field}" placeholder="${desc}"
+                        class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-gray-900 focus:border-gray-900">
+                `;
+                optionalPanel.appendChild(div);
+            }
+
+        }
+
+        async function submitMissingFields() {
+            if (!parsedPromptData) return;
+
+            const additionalFields = {};
+            const missingKeys = Object.keys(parsedPromptData.missing_required || {});
+
+            // Collect missing field values
+            for (const field of missingKeys) {
+                const input = document.getElementById('missing_' + field);
+                if (input && input.value.trim()) {
+                    additionalFields[field] = input.value.trim();
+                }
+            }
+
+            // Collect any optional fields filled
+            for (const field of Object.keys(parsedPromptData.all_optional || {})) {
+                const input = document.getElementById('optional_' + field);
+                if (input && input.value.trim()) {
+                    additionalFields[field] = input.value.trim();
+                }
+            }
+
+            if (Object.keys(additionalFields).length === 0) {
+                alert('Please fill in at least one of the missing fields');
+                return;
+            }
+
+            try {
+                const formData = new FormData();
+                formData.append('parsed_data', JSON.stringify(parsedPromptData));
+                formData.append('additional_fields', JSON.stringify(additionalFields));
+
+                const resp = await fetch('/api/validate-fields', { method: 'POST', body: formData });
+                const data = await resp.json();
+
+                parsedPromptData = data;
+                displayParsedData(data);
+            } catch (e) {
+                alert('Error validating fields: ' + e.message);
+            }
+        }
+
+        function toggleOptionalFields() {
+            const panel = document.getElementById('optionalFieldsPanel');
+            const icon = document.getElementById('optionalToggleIcon');
+            panel.classList.toggle('hidden');
+            icon.style.transform = panel.classList.contains('hidden') ? '' : 'rotate(180deg)';
+        }
+
+        function formatFieldName(field) {
+            return field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ===== Image Upload =====
+        function previewImage(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    document.getElementById('imagePreview').src = e.target.result;
+                    document.getElementById('imagePreview').classList.remove('hidden');
+                    document.getElementById('uploadPlaceholder').classList.add('hidden');
+                    document.getElementById('clearImageBtn').classList.remove('hidden');
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        function clearImage() {
+            document.getElementById('imageInput').value = '';
+            document.getElementById('imagePreview').classList.add('hidden');
+            document.getElementById('uploadPlaceholder').classList.remove('hidden');
+            document.getElementById('clearImageBtn').classList.add('hidden');
+        }
+
+        // ===== Generate Ad =====
+        async function generateAd() {
+            const prompt = document.getElementById('promptInput').value.trim();
+            if (!prompt) { alert('Please enter product details first'); return; }
+
+            // If prompt hasn't been analyzed yet, do it automatically
+            if (!parsedPromptData) {
+                await analyzePrompt();
+                if (!parsedPromptData) return; // Analysis failed
+            }
+
+            // Check for missing required fields and warn
+            const missingKeys = Object.keys(parsedPromptData.missing_required || {});
+            if (missingKeys.length > 0) {
+                const proceed = confirm(
+                    `Missing required fields: ${missingKeys.map(formatFieldName).join(', ')}.\n\n` +
+                    'The ad quality will be better if you fill these in.\n' +
+                    'Click OK to generate anyway, or Cancel to fill in the missing details.'
+                );
+                if (!proceed) {
+                    goToStep(2);
+                    return;
+                }
+            }
+
+            const btn = document.getElementById('generateBtn');
+            const loading = document.getElementById('loadingPanel');
+
+            btn.disabled = true;
+            btn.classList.add('opacity-50');
+            loading.classList.remove('hidden');
+
+            const steps = [
+                'Matching brand...', 'Analyzing reference ads...',
+                'Extracting colors...', 'Generating content...',
+                'Creating HD graphics...', 'Composing ad creative...',
+                'Translating content...'
+            ];
+            let stepIdx = 0;
+            const stepInterval = setInterval(() => {
+                if (stepIdx < steps.length) {
+                    document.getElementById('loadingText').textContent = steps[stepIdx];
+                    stepIdx++;
+                }
+            }, 4000);
+
+            try {
+                const formData = new FormData();
+
+                // Send original user prompt (not the rich_prompt which is for image gen only)
+                formData.append('prompt', prompt);
+                formData.append('languages', Array.from(selectedLangs).join(','));
+
+                // Brand from parsed data
+                const brandFromParse = parsedPromptData?.extracted?.brand || '';
+                if (brandFromParse) {
+                    formData.append('brand', brandFromParse);
+                }
+
+                // Send full product metadata including rich_prompt for image generation
+                if (parsedPromptData) {
+                    const metadata = {
+                        ...(parsedPromptData.extracted || {}),
+                        rich_prompt: parsedPromptData.rich_prompt || '',
+                    };
+                    formData.append('product_metadata', JSON.stringify(metadata));
+                }
+
+                const imageInput = document.getElementById('imageInput');
+                if (imageInput.files && imageInput.files[0]) {
+                    formData.append('image', imageInput.files[0]);
+                }
+
+                const resp = await fetch('/api/generate', { method: 'POST', body: formData });
+                const data = await resp.json();
+                clearInterval(stepInterval);
+
+                if (data.errors && data.errors.length > 0 && !data.pamphlet_url) {
+                    alert('Generation errors: ' + data.errors.join(', '));
+                    return;
+                }
+
+                currentResult = data;
+                displayResult(data);
+                goToStep(4);
+            } catch (e) {
+                clearInterval(stepInterval);
+                alert('Error: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50');
+                loading.classList.add('hidden');
+            }
+        }
+
+        function displayResult(data) {
+            // Pamphlet
+            if (data.pamphlet_url) {
+                document.getElementById('pamphletImage').src = data.pamphlet_url;
+                document.getElementById('downloadPamphlet').href = data.pamphlet_url;
+            }
+
+            // Language tabs
+            const langTabs = document.getElementById('langTabs');
+            langTabs.innerHTML = '';
+            if (data.translations) {
+                for (const lang of Object.keys(data.translations)) {
+                    const btn = document.createElement('button');
+                    btn.className = 'tab-btn text-sm' + (lang === 'en' ? ' active' : '');
+                    btn.textContent = languages[lang] || lang;
+                    btn.onclick = () => {
+                        currentLang = lang;
+                        langTabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        showTranslation(lang);
+                    };
+                    langTabs.appendChild(btn);
+                }
+            }
+
+            // Content
+            showTranslation('en');
+
+            // Hashtags
+            const hashtagsEl = document.getElementById('resultHashtags');
+            hashtagsEl.innerHTML = '';
+            if (data.content && data.content.hashtags) {
+                data.content.hashtags.forEach(h => {
+                    const tag = document.createElement('span');
+                    tag.className = 'tag bg-gray-100 text-gray-700';
+                    tag.textContent = '#' + h.replace('#', '');
+                    hashtagsEl.appendChild(tag);
+                });
+            }
+
+            // Brand info
+            if (data.brand && data.brand.matched_brand) {
+                document.getElementById('brandInfo').classList.remove('hidden');
+                document.getElementById('brandName').textContent = data.brand.matched_brand.replace(/_/g, ' ');
+                document.getElementById('brandConfidence').textContent = (data.brand.confidence * 100).toFixed(0) + '%';
+                document.getElementById('brandCategory').textContent = (data.brand.category + '/' + data.brand.subcategory).replace(/_/g, ' ');
+                document.getElementById('brandCount').textContent = data.brand.image_count.toLocaleString();
+            } else {
+                document.getElementById('brandInfo').classList.add('hidden');
+            }
+
+            // Timings
+            const timingsEl = document.getElementById('timings');
+            timingsEl.innerHTML = '';
+            if (data.timings) {
+                for (const [stage, time] of Object.entries(data.timings)) {
+                    const row = document.createElement('div');
+                    row.className = 'flex justify-between';
+                    row.innerHTML = `<span class="text-gray-500">${stage.replace(/_/g, ' ')}</span><span class="font-medium text-gray-900">${time.toFixed(1)}s</span>`;
+                    timingsEl.appendChild(row);
+                }
+            }
+        }
+
+        function showTranslation(lang) {
+            if (!currentResult || !currentResult.translations) return;
+            const t = currentResult.translations[lang] || currentResult.translations['en'] || {};
+            document.getElementById('resultTitle').textContent = t.product_title || t.tagline || '';
+            document.getElementById('resultDesc').textContent = t.product_description || t.description || '';
+            document.getElementById('resultCaption').textContent = t.instagram_caption || t.caption || '';
+            document.getElementById('resultWhatsapp').textContent = t.whatsapp_copy || t.cta || '';
+        }
+
+        // ===== Copy Text =====
+        function copyText(elementId) {
+            const text = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = event.target;
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+            });
+        }
+
+        // ===== Products =====
+        function toggleCreateForm() {
+            document.getElementById('createProductForm').classList.toggle('hidden');
+        }
+
+        async function createProduct() {
+            const name = document.getElementById('productName').value.trim();
+            if (!name) { alert('Product name is required'); return; }
+
+            const formData = new FormData();
+            formData.append('name', name);
+            formData.append('description', document.getElementById('productDescription').value);
+            formData.append('price', document.getElementById('productPrice').value);
+            formData.append('category', document.getElementById('productCategory').value);
+            formData.append('brand', document.getElementById('productBrand').value);
+
+            const images = document.getElementById('productImages').files;
+            for (let i = 0; i < Math.min(images.length, 3); i++) {
+                formData.append('images', images[i]);
+            }
+
+            try {
+                const resp = await fetch('/api/products', { method: 'POST', body: formData });
+                const data = await resp.json();
+                alert('Product created! ID: ' + data.product_id);
+                toggleCreateForm();
+                loadProducts();
+                // Clear form
+                document.getElementById('productName').value = '';
+                document.getElementById('productDescription').value = '';
+                document.getElementById('productPrice').value = '';
+                document.getElementById('productCategory').value = '';
+                document.getElementById('productBrand').value = '';
+                document.getElementById('productImages').value = '';
+            } catch (e) {
+                alert('Error creating product: ' + e.message);
+            }
+        }
+
+        async function loadProducts() {
+            try {
+                const resp = await fetch('/api/products');
+                const data = await resp.json();
+                const list = document.getElementById('productList');
+                const empty = document.getElementById('noProducts');
+
+                if (!data.products || data.products.length === 0) {
+                    list.innerHTML = '';
+                    empty.classList.remove('hidden');
+                    return;
+                }
+
+                empty.classList.add('hidden');
+                list.innerHTML = data.products.map(p => `
+                    <div class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:border-gray-200 transition">
+                        <div class="flex justify-between items-center">
+                            <div class="flex-1 min-w-0 mr-4">
+                                <div class="flex items-center space-x-3">
+                                    <h3 class="font-semibold text-gray-900 text-sm truncate">${p.name}</h3>
+                                    ${p.brand ? `<span class="tag bg-gray-100 text-gray-600">${p.brand}</span>` : ''}
+                                    ${p.price ? `<span class="text-xs font-medium text-gray-500">${p.price}</span>` : ''}
+                                </div>
+                                <p class="text-xs text-gray-400 mt-1 truncate">${p.description || p.category || 'No description'}</p>
+                            </div>
+                            <div class="flex items-center space-x-1 flex-shrink-0">
+                                <button onclick="viewProduct('${p.id}')" class="text-gray-500 text-xs font-medium hover:text-gray-900 px-2.5 py-1.5 rounded-md hover:bg-gray-50 transition cursor-pointer">View</button>
+                                <button onclick="copyHubLink('${p.id}')" class="text-gray-500 text-xs font-medium hover:text-gray-900 px-2.5 py-1.5 rounded-md hover:bg-gray-50 transition cursor-pointer">Hub Link</button>
+                                <button onclick="deleteProduct('${p.id}')" class="text-gray-400 text-xs hover:text-red-600 px-2.5 py-1.5 rounded-md hover:bg-red-50 transition cursor-pointer">Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load products:', e);
+            }
+        }
+
+        async function viewProduct(id) {
+            try {
+                const resp = await fetch(`/api/products/${id}`);
+                const data = await resp.json();
+                const p = data.product;
+                const content = data.content || [];
+                const analytics = data.analytics || { total_clicks: 0, by_platform: {} };
+
+                const detail = document.getElementById('productDetailContent');
+                const c = (content.length > 0 && content[0].content_json) ? content[0].content_json : {};
+                const pamphletUrl = (content.length > 0 && content[0].pamphlet_path) ? '/file?path=' + content[0].pamphlet_path : '';
+
+                detail.innerHTML = `
+                    <!-- Product Header -->
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 mb-4">
+                        <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex flex-wrap items-center gap-2 mb-2">
+                                    ${p.brand ? `<span class="tag bg-gray-100 text-gray-700">${p.brand}</span>` : ''}
+                                    ${p.category ? `<span class="tag bg-gray-100 text-gray-700">${p.category}</span>` : ''}
+                                </div>
+                                <h2 class="text-xl font-bold text-gray-900">${p.name}</h2>
+                                ${p.description ? `<p class="text-sm text-gray-500 mt-1.5 leading-relaxed">${p.description}</p>` : ''}
+                                ${p.price ? `<p class="text-lg font-semibold text-gray-900 mt-3">${p.price}</p>` : ''}
+                            </div>
+                            <div class="flex items-center space-x-2 flex-shrink-0">
+                                <a href="/hub/${p.id}" target="_blank" class="bg-gray-900 text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition cursor-pointer inline-flex items-center space-x-1.5">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                                    <span>Open Hub</span>
+                                </a>
+                                <button onclick="copyHubLink('${p.id}')" class="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-50 transition cursor-pointer inline-flex items-center space-x-1.5">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                                    <span>Copy Link</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Two Column: Creative + Details -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                        <!-- Left: Pamphlet -->
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                            <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Ad Creative</h3>
+                            ${pamphletUrl
+                                ? `<img src="${pamphletUrl}" class="w-full rounded-lg border border-gray-100" alt="Generated Ad">
+                                   <a href="${pamphletUrl}" download class="mt-3 inline-flex items-center space-x-1.5 text-sm text-gray-500 hover:text-gray-900 font-medium cursor-pointer">
+                                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                       <span>Download HD</span>
+                                   </a>`
+                                : `<div class="flex flex-col items-center justify-center py-12 text-center">
+                                       <svg class="w-10 h-10 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                       <p class="text-sm text-gray-400">No ad generated yet</p>
+                                       <p class="text-xs text-gray-400 mt-1">Use the form below to create one</p>
+                                   </div>`
+                            }
+                        </div>
+
+                        <!-- Right: Content + Analytics -->
+                        <div class="space-y-4">
+                            <!-- Generated Copy -->
+                            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                                <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Generated Copy</h3>
+                                ${(c.product_title || c.product_description || c.instagram_caption)
+                                    ? `<div class="space-y-4">
+                                        ${c.product_title ? `<div><div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Title</div><p class="text-sm text-gray-900 font-medium">${c.product_title}</p></div>` : ''}
+                                        ${c.product_description ? `<div><div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Description</div><p class="text-sm text-gray-600 leading-relaxed">${c.product_description}</p></div>` : ''}
+                                        ${c.instagram_caption ? `<div><div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Instagram</div><p class="text-sm text-gray-600 leading-relaxed">${c.instagram_caption}</p></div>` : ''}
+                                        ${c.whatsapp_copy ? `<div><div class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">WhatsApp</div><p class="text-sm text-gray-600 leading-relaxed">${c.whatsapp_copy}</p></div>` : ''}
+                                    </div>`
+                                    : `<p class="text-sm text-gray-400 py-6 text-center">No content generated yet</p>`
+                                }
+                            </div>
+
+                            <!-- Analytics -->
+                            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
+                                <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Traffic Analytics</h3>
+                                <div class="grid grid-cols-2 gap-3">
+                                    <div class="p-3 bg-gray-50 rounded-lg">
+                                        <div class="text-lg font-bold text-gray-900">${analytics.total_clicks}</div>
+                                        <div class="text-xs text-gray-500">Total Clicks</div>
+                                    </div>
+                                    <div class="p-3 bg-gray-50 rounded-lg">
+                                        <div class="text-lg font-bold text-gray-900">${analytics.by_platform?.whatsapp || 0}</div>
+                                        <div class="text-xs text-gray-500">WhatsApp</div>
+                                    </div>
+                                    <div class="p-3 bg-gray-50 rounded-lg">
+                                        <div class="text-lg font-bold text-gray-900">${analytics.by_platform?.instagram || 0}</div>
+                                        <div class="text-xs text-gray-500">Instagram</div>
+                                    </div>
+                                    <div class="p-3 bg-gray-50 rounded-lg">
+                                        <div class="text-lg font-bold text-gray-900">${analytics.by_platform?.website || 0}</div>
+                                        <div class="text-xs text-gray-500">Website</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Generate for this product -->
+                    <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                        <h3 class="text-sm font-semibold text-gray-900 uppercase tracking-wider mb-4">Generate New Content</h3>
+                        <div class="flex space-x-3">
+                            <input type="text" id="productGenPrompt" class="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-gray-900 focus:border-gray-900" placeholder="Custom prompt (optional)">
+                            <button onclick="generateForProduct('${p.id}')" class="bg-gray-900 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-gray-800 transition cursor-pointer">Generate</button>
+                        </div>
+                    </div>
+                `;
+
+                showPage('product-detail');
+            } catch (e) {
+                alert('Error loading product: ' + e.message);
+            }
+        }
+
+        async function generateForProduct(id) {
+            const prompt = document.getElementById('productGenPrompt')?.value || '';
+            const langs = Array.from(selectedLangs).join(',');
+
+            try {
+                const formData = new FormData();
+                formData.append('prompt', prompt);
+                formData.append('languages', langs);
+
+                const resp = await fetch(`/api/products/${id}/generate`, { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (data.success) {
+                    alert('Content generated successfully!');
+                    viewProduct(id);
+                } else {
+                    alert('Errors: ' + (data.errors || []).join(', '));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function deleteProduct(id) {
+            if (!confirm('Delete this product?')) return;
+            try {
+                await fetch(`/api/products/${id}`, { method: 'DELETE' });
+                loadProducts();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        function copyHubLink(id) {
+            const url = window.location.origin + '/hub/' + id;
+            navigator.clipboard.writeText(url).then(() => alert('Hub link copied: ' + url));
+        }
+
+        // ===== Save Generated Ad as Product =====
+        let savedProductId = null;
+        let savedHubUrl = null;
+
+        async function saveGeneratedAsProduct() {
+            if (!currentResult) { alert('No generated ad to save'); return; }
+
+            const btn = document.getElementById('saveToProductBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<div class="spinner mx-auto" style="width:20px;height:20px;border-width:2px;"></div>';
+
+            try {
+                const content = currentResult.content || {};
+                const translations = currentResult.translations || {};
+
+                // Merge translations into content for storage
+                const fullContent = { ...content, translations };
+
+                // Extract name from parsed data or content
+                const productName = parsedPromptData?.extracted?.product_name ||
+                                    parsedPromptData?.extracted?.brand ||
+                                    content.product_title ||
+                                    document.getElementById('promptInput').value.trim().substring(0, 60);
+
+                const formData = new FormData();
+                formData.append('name', productName);
+                formData.append('description', content.product_description || '');
+                formData.append('price', parsedPromptData?.extracted?.price || '');
+                formData.append('category', parsedPromptData?.category || parsedPromptData?.extracted?.category || '');
+                formData.append('brand', parsedPromptData?.extracted?.brand || currentResult.brand?.matched_brand?.replace(/_/g, ' ') || '');
+                formData.append('content_json', JSON.stringify(fullContent));
+                formData.append('languages_generated', (currentResult.languages_generated || ['en']).join(','));
+
+                // Extract actual file paths from URLs (remove /file?path= prefix)
+                if (currentResult.pamphlet_url) {
+                    const pamphletPath = currentResult.pamphlet_url.replace('/file?path=', '');
+                    formData.append('pamphlet_path', decodeURIComponent(pamphletPath));
+                }
+                if (currentResult.product_image_url) {
+                    const imgPath = currentResult.product_image_url.replace('/file?path=', '');
+                    formData.append('product_image_path', decodeURIComponent(imgPath));
+                }
+
+                const resp = await fetch('/api/save-generated', { method: 'POST', body: formData });
+                const data = await resp.json();
+
+                if (data.product_id) {
+                    savedProductId = data.product_id;
+                    savedHubUrl = window.location.origin + data.hub_url;
+
+                    // Show success panel, hide save button
+                    document.getElementById('saveProductPanel').classList.add('hidden');
+                    document.getElementById('savedSuccessPanel').classList.remove('hidden');
+                    document.getElementById('hubLinkDisplay').textContent = savedHubUrl;
+                    document.getElementById('openHubBtn').href = data.hub_url;
+
+                    // Update dashboard product count
+                    const statsResp = await fetch('/api/stats').catch(() => null);
+                    if (statsResp && statsResp.ok) {
+                        const stats = await statsResp.json();
+                        document.getElementById('stat-products').textContent = stats.products || 0;
+                    }
+                } else {
+                    alert('Failed to save product');
+                }
+            } catch (e) {
+                alert('Error saving product: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/></svg><span>Save to Products & Get Share Link</span>';
+            }
+        }
+
+        function copySavedHubLink() {
+            if (savedHubUrl) {
+                navigator.clipboard.writeText(savedHubUrl).then(() => {
+                    alert('Hub link copied: ' + savedHubUrl);
+                });
+            }
+        }
+
+        function shareTo(platform) {
+            if (!savedHubUrl) { alert('Please save the product first'); return; }
+
+            const title = currentResult?.content?.product_title || 'Check out this product!';
+            const desc = currentResult?.content?.product_description || '';
+            const shareText = title + (desc ? ' - ' + desc.substring(0, 100) : '');
+            const pamphletUrl = currentResult?.pamphlet_url ? window.location.origin + currentResult.pamphlet_url : '';
+
+            // Track the share
+            if (savedProductId) {
+                fetch(`/api/track/${savedProductId}?platform=${platform}`, { method: 'POST' });
+            }
+
+            switch (platform) {
+                case 'whatsapp':
+                    window.open('https://api.whatsapp.com/send?text=' + encodeURIComponent(shareText + '\n' + savedHubUrl), '_blank');
+                    break;
+                case 'instagram':
+                    navigator.clipboard.writeText(savedHubUrl).then(() => {
+                        alert('Link copied! Open Instagram and paste it in your post/story.');
+                    });
+                    break;
+                case 'facebook':
+                    window.open('https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(savedHubUrl), '_blank', 'width=600,height=400');
+                    break;
+                case 'twitter':
+                    window.open('https://twitter.com/intent/tweet?text=' + encodeURIComponent(shareText) + '&url=' + encodeURIComponent(savedHubUrl), '_blank', 'width=600,height=400');
+                    break;
+                case 'linkedin':
+                    window.open('https://www.linkedin.com/sharing/share-offsite/?url=' + encodeURIComponent(savedHubUrl), '_blank', 'width=600,height=400');
+                    break;
+                case 'telegram':
+                    window.open('https://t.me/share/url?url=' + encodeURIComponent(savedHubUrl) + '&text=' + encodeURIComponent(shareText), '_blank');
+                    break;
+                case 'pinterest':
+                    window.open('https://pinterest.com/pin/create/button/?url=' + encodeURIComponent(savedHubUrl) + '&media=' + encodeURIComponent(pamphletUrl) + '&description=' + encodeURIComponent(shareText), '_blank', 'width=600,height=400');
+                    break;
+                case 'email':
+                    window.location.href = 'mailto:?subject=' + encodeURIComponent(title) + '&body=' + encodeURIComponent(shareText + '\n\n' + savedHubUrl);
+                    break;
+            }
+        }
+
+        // ===== Prompt Change Detection =====
+        document.getElementById('promptInput').addEventListener('input', function() {
+            if (parsedPromptData) {
+                parsedPromptData = null;
+            }
+        });
+
+        // ===== Init =====
+        init();
+        showPage('dashboard');
+    </script>
+</body>
+</html>

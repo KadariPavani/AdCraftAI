@@ -1,0 +1,59 @@
+# ============================================================
+# Docker Compose for MAdVerse (AdCraft AI)
+# Usage: docker-compose up
+# ============================================================
+
+services:
+  madverse:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    
+    container_name: madverse-app
+    
+    # Port mapping - access at http://localhost:8000
+    ports:
+      - "8000:8000"
+    
+    # Environment variables from .env file
+    env_file:
+      - .env
+    
+    # Additional environment variables
+    environment:
+      - PORT=8000
+      - PYTHONUNBUFFERED=1
+      # Skip dataset download (embeddings work without images)
+      - SKIP_DATASET_DOWNLOAD=1
+    
+    # Volume mounts for persistent data
+    volumes:
+      # Database - persists products and analytics
+      - ./products_db:/app/products_db
+      # Generated outputs - persists generated ads
+      - ./outputs:/app/outputs
+      # User uploads - persists uploaded images
+      - ./uploads:/app/uploads
+      # Optional: Mount data/images if you have local dataset
+      # - ./data/images:/app/data/images
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Resource limits (adjust based on your system)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
