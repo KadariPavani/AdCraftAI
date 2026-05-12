@@ -142,6 +142,7 @@ class ProAdDesigner:
     THEMES = [
         "minimal_clean", "bold_hero", "premium_dark",
         "split_layout", "card_float", "gradient_mesh",
+        "realistic_pamphlet",
     ]
 
     def __init__(self):
@@ -154,6 +155,7 @@ class ProAdDesigner:
             "split_layout": self._render_split_layout,
             "card_float": self._render_card_float,
             "gradient_mesh": self._render_gradient_mesh,
+            "realistic_pamphlet": self._render_realistic_pamphlet,
         }
 
     # --- Shared utilities ---
@@ -901,7 +903,12 @@ class ProAdDesigner:
         self._analysis = self._analyze_image(content.product_image)
         print(f"    [DESIGNER] Analysis: text_side={self._analysis.get('text_side')}, is_dark={self._analysis.get('is_dark')}, avg_brightness={self._analysis.get('avg_brightness', 0):.0f}")
 
-        theme = self._select_theme(content)
+        forced_theme = (getattr(content, "theme_name", "") or "").strip()
+        if forced_theme and forced_theme in self._theme_renderers:
+            theme = forced_theme
+            print(f"    [DESIGNER] Forced theme from content: {theme}")
+        else:
+            theme = self._select_theme(content)
         print(f"    [DESIGNER] Selected theme: {theme}")
         print(f"    [DESIGNER] Available themes: {self.THEMES}")
         renderer = self._theme_renderers[theme]
@@ -1398,6 +1405,113 @@ class ProAdDesigner:
 
         draw = ImageDraw.Draw(canvas)
         draw.rectangle([0, H - 4, W, H], fill=(*accent, 220))
+
+        return canvas
+
+    # === THEME 7: Realistic Pamphlet ===
+    def _render_realistic_pamphlet(self, content) -> Image.Image:
+        W, H = self.WIDTH, self.HEIGHT
+        accent = self._hex_to_rgb(content.accent_color)
+        secondary = self._hex_to_rgb(content.secondary_color)
+        base_top = tuple(min(255, int(0.76 * c + 0.24 * 245)) for c in secondary)
+        base_mid = tuple(min(255, int(0.60 * c + 0.40 * 232)) for c in secondary)
+        base_bottom = tuple(max(0, int(0.55 * c + 0.45 * 28)) for c in accent)
+
+        canvas = Image.new("RGBA", (W, H), (*base_bottom, 255))
+        draw = ImageDraw.Draw(canvas)
+        for y in range(H):
+            t = y / max(1, H - 1)
+            if t < 0.58:
+                tt = t / 0.58
+                rgb = tuple(int(base_top[i] * (1 - tt) + base_mid[i] * tt) for i in range(3))
+            else:
+                tt = (t - 0.58) / 0.42
+                rgb = tuple(int(base_mid[i] * (1 - tt) + base_bottom[i] * tt) for i in range(3))
+            draw.line([(0, y), (W, y)], fill=(*rgb, 255))
+
+        # Soft studio lighting only; keep it realistic and uncluttered.
+        light = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ld = ImageDraw.Draw(light)
+        ld.ellipse([int(W * 0.18), int(H * 0.20), int(W * 0.82), int(H * 0.84)], fill=(*secondary, 92))
+        ld.ellipse([int(W * 0.34), int(H * 0.30), int(W * 0.66), int(H * 0.70)], fill=(255, 245, 230, 78))
+        light = light.filter(ImageFilter.GaussianBlur(42))
+        canvas = Image.alpha_composite(canvas, light)
+
+        # Keep background cinematic and clean: avoid decorative geometry/circles.
+        mood = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        md = ImageDraw.Draw(mood)
+        md.rectangle([0, 0, W, int(H * 0.30)], fill=(20, 14, 10, 36))
+        md.rectangle([0, int(H * 0.76), W, H], fill=(20, 14, 10, 62))
+        mood = mood.filter(ImageFilter.GaussianBlur(24))
+        canvas = Image.alpha_composite(canvas, mood)
+
+        if content.logo_image:
+            canvas = self._place_logo(canvas, content.logo_image, "top-center", max_height=54, padding=28, backing=False)
+
+        draw = ImageDraw.Draw(canvas)
+        sample_text = " ".join([content.brand_name or "", content.headline or "", content.tagline or "", content.cta_text or ""])
+        self._script = self._detect_script(sample_text)
+
+        brand = (content.brand_name or "").replace("_", " ").upper()
+        brand_font = self._font("body", 14)
+        if brand:
+            bw, _ = self._text_size(draw, brand, brand_font)
+            bx = (W - bw) // 2
+            draw.text((bx, 66), brand, font=brand_font, fill=(66, 44, 28, 210))
+
+        headline = content.headline or content.tagline or brand or "Premium Product"
+        head_font = self._font("headline", 78)
+        lines = self._word_wrap(draw, headline, head_font, int(W * 0.86))
+        y = 118
+        for line in lines[:2]:
+            tw, th = self._text_size(draw, line, head_font)
+            x = (W - tw) // 2
+            draw.text((x, y + 3), line, font=head_font, fill=(58, 34, 20, 125))
+            draw.text((x, y), line, font=head_font, fill=(255, 246, 232, 242))
+            y += th + 6
+
+        sub_font = self._font("body", 28)
+        subtitle = content.tagline or ""
+        if subtitle:
+            lines = self._word_wrap(draw, subtitle, sub_font, int(W * 0.78))
+            if lines:
+                tw, _ = self._text_size(draw, lines[0], sub_font)
+                x = (W - tw) // 2
+                y += 8
+                draw.text((x, y + 2), lines[0], font=sub_font, fill=(58, 34, 20, 110))
+                draw.text((x, y), lines[0], font=sub_font, fill=(244, 229, 202, 225))
+                y += 42
+
+        # Product hero centered with realistic shadow.
+        if content.product_image:
+            prod = content.product_image.copy().convert("RGBA")
+            if prod.mode != "RGBA":
+                prod = prod.convert("RGBA")
+            pw, ph = prod.size
+            max_w = int(W * 0.62)
+            max_h = int(H * 0.42)
+            scale = min(max_w / max(1, pw), max_h / max(1, ph), 1.0)
+            prod = prod.resize((max(1, int(pw * scale)), max(1, int(ph * scale))), Image.LANCZOS)
+            px = (W - prod.width) // 2
+            py = int(H * 0.50) - prod.height // 2
+            py = max(270, min(py, 610))
+
+            shadow = Image.new("RGBA", (prod.width, prod.height), (0, 0, 0, 0))
+            sa = prod.split()[-1].filter(ImageFilter.GaussianBlur(14))
+            shadow.putalpha(sa.point(lambda p: min(p, 72)))
+            canvas.alpha_composite(shadow, (px, py + 18))
+            canvas.alpha_composite(prod, (px, py))
+
+        # Bottom copy and CTA.
+        feat_font = self._font("body", 16)
+        feat_text = "  \u2022  ".join(content.features[:3]) if content.features else ""
+        if feat_text:
+            ftw, _ = self._text_size(draw, feat_text, feat_font)
+            fx = (W - ftw) // 2
+            draw.text((fx, 858), feat_text, font=feat_font, fill=(244, 228, 201, 230))
+
+        cta = self._get_cta_text(content)
+        canvas, _ = self._draw_cta_button(canvas, cta, ((W - 240) // 2, 912), accent, style="rounded", font_size=20)
 
         return canvas
 

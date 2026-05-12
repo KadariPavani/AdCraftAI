@@ -1,5 +1,5 @@
 # Smart Prompt Parser — Extracts structured product catalog data from free-text input.
-# Uses AI (Pollinations) to parse a single prompt into Amazon-like catalog fields,
+# Uses AI (Groq) to parse a single prompt into Amazon-like catalog fields,
 # then identifies which required fields are missing based on product category.
 
 import json
@@ -7,7 +7,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.content_gen import PollinationsTextGenerator
+from app.content_gen import GroqTextGenerator
 from app.brands import BrandMatcher
 
 
@@ -200,7 +200,7 @@ class SmartPromptParser:
     """Parses free-text product descriptions into structured catalog data."""
 
     def __init__(self, pipeline=None):
-        self.text_gen = PollinationsTextGenerator()
+        self.text_gen = GroqTextGenerator()
         self.pipeline = pipeline  # Set later via set_pipeline()
         print(f"    [SMART-PROMPT] SmartPromptParser initialized")
 
@@ -223,7 +223,7 @@ class SmartPromptParser:
         """Parse a free-text prompt into structured product data.
 
         Local extraction is always run first (<20ms). If use_ai=True, also
-        calls Pollinations AI to refine/correct the extraction (adds ~3-8s).
+        calls Groq AI to refine/correct the extraction.
         Falls back to local-only if AI is unavailable or times out.
 
         Args:
@@ -497,61 +497,31 @@ class SmartPromptParser:
     )
 
     def _refine_with_ai(self, prompt: str, local_extracted: Dict) -> Optional[Dict[str, str]]:
-        """Use Pollinations AI to accurately extract fields — optimized for speed.
-
-        Makes a direct API call with:
-        - Compact system prompt (minimal tokens)
-        - max_tokens=400 (limits response length = faster generation)
-        - temperature=0 (deterministic, no sampling overhead)
-        - 15s timeout (fail fast, fall back to local)
-
-        Returns refined dict or None on failure (caller keeps local extraction).
-        """
-        import requests as _req
-
+        """Use Groq AI to refine field extraction."""
         try:
+            if not self.text_gen.available:
+                print("    [SMART-PROMPT] Groq unavailable, keeping local extraction")
+                return None
+
             t0 = time.time()
-            payload = {
-                "messages": [
-                    {"role": "system", "content": self._AI_SYSTEM},
-                    {"role": "user", "content": prompt},
-                ],
-                "model": "openai",
-                "seed": int(time.time()) % 10000,
-                "jsonMode": True,
-                "max_tokens": 400,
-                "temperature": 0,
-            }
-            print(f"    [SMART-PROMPT] AI refinement request (max_tokens=400, temp=0)")
-            resp = _req.post("https://text.pollinations.ai/", json=payload, timeout=15)
+            print("    [SMART-PROMPT] AI refinement request via Groq")
+            result = self.text_gen.generate_json(self._AI_SYSTEM, prompt)
             elapsed = time.time() - t0
-            print(f"    [SMART-PROMPT] AI refinement took {elapsed:.1f}s (status={resp.status_code})")
+            print(f"    [SMART-PROMPT] AI refinement took {elapsed:.1f}s")
 
-            if resp.status_code != 200 or len(resp.text) < 10:
-                print(f"    [SMART-PROMPT] AI refinement failed, keeping local extraction")
+            if not result or not isinstance(result, dict):
+                print("    [SMART-PROMPT] AI refinement failed, keeping local extraction")
                 return None
 
-            text = resp.text.strip()
-            if text.startswith("```"):
-                text = re.sub(r'^```(?:json)?\s*', '', text)
-                text = re.sub(r'\s*```$', '', text)
-            result = json.loads(text)
-
-            if not isinstance(result, dict):
-                return None
-
-            # Build merged result: AI fields override local, but keep local extras
             refined = {}
             for key, val in result.items():
                 if val is not None and str(val).strip() and str(val).strip().lower() not in ("null", "none", "n/a", "not specified", "not mentioned"):
                     refined[key] = str(val).strip()
 
-            # Supplement with local extraction for fields AI missed
             for key, val in local_extracted.items():
                 if key not in refined or not refined[key]:
                     refined[key] = val
 
-            # For precise numeric fields, prefer local regex (better formatting)
             for key in ("price", "pack_size", "size_range", "weight"):
                 if local_extracted.get(key) and refined.get(key):
                     local_val = local_extracted[key]
@@ -560,12 +530,7 @@ class SmartPromptParser:
 
             print(f"    [SMART-PROMPT] AI refined {len(refined)} fields: {list(refined.keys())}")
             return refined
-
-        except _req.Timeout:
-            elapsed = time.time() - t0
-            print(f"    [SMART-PROMPT] AI refinement TIMEOUT ({elapsed:.1f}s), keeping local extraction")
-            return None
-        except (json.JSONDecodeError, Exception) as e:
+        except Exception as e:
             print(f"    [SMART-PROMPT] AI refinement error: {e}, keeping local extraction")
             return None
 

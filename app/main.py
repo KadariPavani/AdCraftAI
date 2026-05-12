@@ -6,12 +6,15 @@ Fully local — no external APIs for image/text generation.
 
 import io
 import json
+import math
 import os
 import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
+from urllib.parse import urlparse
+from urllib.request import Request as UrlRequest, urlopen
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,27 +26,6 @@ from app.pipeline import (
     AdCraftPipeline, SUPPORTED_LANGUAGES, OUTPUT_DIR, UPLOAD_DIR
 )
 from app.smart_prompt import SmartPromptParser, CATEGORY_FIELDS
-from app.storage import ImageStorage
-
-# ---------------------------------------------------------------------------
-# Helper Functions
-# ---------------------------------------------------------------------------
-
-def get_public_url(path_or_url: str) -> str:
-    """Convert a path or URL to a publicly accessible URL.
-    - If it's already a URL (http/https), return as-is (Cloudinary)
-    - If it's a local path, wrap with /file?path=
-    """
-    if not path_or_url:
-        return None
-    
-    # Already a URL (Cloudinary or external)
-    if path_or_url.startswith(('http://', 'https://')):
-        return path_or_url
-    
-    # Local file path - needs /file endpoint
-    return f"/file?path={path_or_url}"
-
 
 # ---------------------------------------------------------------------------
 # App Setup
@@ -91,6 +73,19 @@ def get_smart_parser() -> SmartPromptParser:
     except Exception:
         pass  # Pipeline not ready yet, parser works without it
     return _smart_parser
+
+
+def _sanitize_for_json(value: Any) -> Any:
+    """Recursively convert non-JSON-safe float values (NaN/Inf) to None."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _sanitize_for_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_for_json(v) for v in value]
+    if isinstance(value, tuple):
+        return [_sanitize_for_json(v) for v in value]
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -167,9 +162,9 @@ async def serve_product_hub(product_id: str):
     pamphlet_url = ""
     product_image_url = ""
     if latest_content and latest_content.get("pamphlet_path"):
-        pamphlet_url = get_public_url(latest_content['pamphlet_path'])
+        pamphlet_url = f"/file?path={latest_content['pamphlet_path']}"
     if latest_content and latest_content.get("product_image_path"):
-        product_image_url = get_public_url(latest_content['product_image_path'])
+        product_image_url = f"/file?path={latest_content['product_image_path']}"
 
     brand = product.get("brand", product.get("name", "Product"))
     description = product.get("description", "")
@@ -191,7 +186,7 @@ async def serve_product_hub(product_id: str):
     price = product.get("price", "")
 
     # Product images for gallery
-    image_urls = [get_public_url(ip) for ip in product.get("image_paths", [])]
+    image_urls = [f"/file?path={ip}" for ip in product.get("image_paths", [])]
     # Use pamphlet as hero, fallback to first product image
     hero_image = pamphlet_url or product_image_url or (image_urls[0] if image_urls else "")
 
@@ -560,7 +555,7 @@ async def dataset_summary():
             encoded = quote(img_path, safe="/\\:")
             ts = meta.get("timestamp", "")
             bd["sample_images"].append({
-                "url": get_public_url(encoded),
+                "url": f"/file?path={encoded}",
                 "timestamp": ts,
                 "ad_type": ad_type,
             })
@@ -682,7 +677,7 @@ async def parse_prompt(prompt: str = Form(...), use_ai: str = Form("false")):
     """Parse a free-text product prompt into structured catalog data.
 
     Fast local extraction (<20ms) by default. Set use_ai=true for AI-enhanced
-    accuracy via Pollinations (adds ~3-8s).
+    accuracy via Groq.
 
     Returns extracted fields, missing required fields, and completeness score.
     """
@@ -736,28 +731,41 @@ async def validate_fields(
 
 @app.post("/api/generate")
 async def generate_ad(
-    prompt: str = Form(...),
+    prompt: str = Form(""),
+    query: str = Form(""),
     languages: str = Form("en"),
     brand: str = Form(""),
+    model: str = Form(""),
+    style: str = Form(""),
     image: Optional[UploadFile] = File(None),
+    image_url: str = Form(""),
     product_metadata: str = Form(""),
 ):
     """Generate ad creative from text prompt and optional image.
 
-    - prompt: Text description (e.g., "Bisleri water bottle pamphlet")
+    - prompt/query: Text description (e.g., "Bisleri water bottle pamphlet")
     - languages: Comma-separated language codes (e.g., "en,hi,ta,bn")
     - brand: Brand name for logo fetching (e.g., "Nike", "Samsung")
+    - model: Optional FLUX model preference (e.g., "flux1-kontext-dev", "flux2-pro")
+    - style: Optional style/edit instruction to reinforce ad quality
     - image: Optional product image upload
     - product_metadata: JSON string of structured product data from Smart Prompt
     """
     import time as _time
     api_start = _time.time()
+    effective_prompt = (prompt or "").strip() or (query or "").strip()
+    if not effective_prompt:
+        raise HTTPException(status_code=400, detail="Either 'prompt' or 'query' is required")
+
     print(f"\n{'#' * 70}")
     print(f"[API] POST /api/generate")
-    print(f"[API] Prompt: \"{prompt}\"")
+    print(f"[API] Prompt: \"{effective_prompt}\"")
     print(f"[API] Languages: {languages}")
     print(f"[API] Brand: {brand or 'auto-detect'}")
+    print(f"[API] Image model: {model or 'default'}")
+    print(f"[API] Style instruction: {'YES' if style.strip() else 'NO'}")
     print(f"[API] Image uploaded: {image.filename if image and image.filename else 'None'}")
+    print(f"[API] Image URL provided: {'YES' if image_url.strip() else 'NO'}")
     print(f"[API] Product metadata: {'YES' if product_metadata else 'NO'}")
     print(f"{'#' * 70}")
 
@@ -797,27 +805,51 @@ async def generate_ad(
         try:
             contents = await image.read()
             uploaded_image = Image.open(io.BytesIO(contents)).convert("RGB")
-            # Save uploaded image using storage
+            # Save uploaded image
             img_filename = f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{image.filename}"
-            img_path = pipeline.storage.save_image(uploaded_image, img_filename, folder="uploads")
+            img_path = UPLOAD_DIR / img_filename
+            uploaded_image.save(str(img_path))
             print(f"[API] Uploaded image saved: {img_path} | Size: {uploaded_image.size}")
         except Exception as e:
             print(f"[API] ERROR: Invalid image upload: {e}")
             raise HTTPException(status_code=400, detail=f"Invalid image: {str(e)}")
+    elif image_url.strip():
+        try:
+            parsed = urlparse(image_url.strip())
+            if parsed.scheme not in ("http", "https"):
+                print(f"[API] WARNING: Skipping image_url with unsupported scheme: {parsed.scheme or 'none'}")
+                parsed = None
+
+            if parsed is not None:
+                req = UrlRequest(image_url.strip(), headers={"User-Agent": "AdCraftAI/1.0"})
+                with urlopen(req, timeout=20) as resp:
+                    contents = resp.read()
+
+                uploaded_image = Image.open(io.BytesIO(contents)).convert("RGB")
+                img_filename = f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}_from_url.png"
+                img_path = UPLOAD_DIR / img_filename
+                uploaded_image.save(str(img_path))
+                print(f"[API] Image URL loaded and saved: {img_path} | Size: {uploaded_image.size}")
+        except Exception as e:
+            # Non-blocking: if image URL cannot be fetched/decoded, continue text-only generation
+            print(f"[API] WARNING: Invalid image_url (continuing without image): {e}")
 
     # Run pipeline
     result = pipeline.generate(
-        query=prompt,
+        query=effective_prompt,
         languages=lang_list,
         uploaded_image=uploaded_image,
         brand_override=brand.strip() if brand.strip() else None,
         product_metadata=metadata if metadata else None,
+        image_model=model.strip(),
+        style_instruction=style.strip(),
     )
 
     # Build response
     response = {
         "success": len(result.errors) == 0,
         "query": result.query,
+        "model": model.strip() or None,
         "brand": result.brand_match,
         "timings": result.stage_timings,
         "content": {
@@ -829,11 +861,12 @@ async def generate_ad(
         },
         "translations": result.translations,
         "languages_generated": result.languages_generated,
-        "pamphlet_url": get_public_url(result.pamphlet_path),
-        "product_image_url": get_public_url(result.product_image_path),
+        "pamphlet_url": f"/file?path={result.pamphlet_path}" if result.pamphlet_path else None,
+        "product_image_url": f"/file?path={result.product_image_path}" if result.product_image_path else None,
         "retrieved_ads": result.retrieved_ads[:3],
         "colors": result.extracted_colors,
         "dataset_paths": result.dataset_paths,
+        "dataset_enhanced": bool(result.dataset_paths),
         "errors": result.errors,
     }
 
@@ -844,7 +877,7 @@ async def generate_ad(
     if result.errors:
         print(f"[API] Errors: {result.errors}")
 
-    return JSONResponse(content=response)
+    return JSONResponse(content=_sanitize_for_json(response))
 
 
 # ---------------------------------------------------------------------------
@@ -959,8 +992,8 @@ async def create_product(
                     contents = await img_file.read()
                     img = Image.open(io.BytesIO(contents)).convert("RGB")
                     filename = f"product_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{img_file.filename}"
-                    # Save using storage abstraction
-                    path = pipeline.storage.save_image(img, filename, folder="uploads")
+                    path = str(UPLOAD_DIR / filename)
+                    img.save(path, quality=95)
                     image_paths.append(path)
                     print(f"[API] Product image saved: {path} | Size: {img.size}")
                 except Exception as e:
@@ -983,7 +1016,7 @@ async def list_products():
     # Add hub URLs
     for p in products:
         p["hub_url"] = f"/hub/{p['id']}"
-        p["image_urls"] = [get_public_url(ip) for ip in p.get("image_paths", [])]
+        p["image_urls"] = [f"/file?path={ip}" for ip in p.get("image_paths", [])]
     return {"products": products}
 
 
@@ -998,7 +1031,7 @@ async def get_product(product_id: str):
     analytics = pipeline.db.get_analytics(product_id)
 
     product["hub_url"] = f"/hub/{product_id}"
-    product["image_urls"] = [get_public_url(ip) for ip in product.get("image_paths", [])]
+    product["image_urls"] = [f"/file?path={ip}" for ip in product.get("image_paths", [])]
 
     return {
         "product": product,
@@ -1054,7 +1087,7 @@ async def generate_for_product(
     )
 
     print(f"[API] Generation for product {product_id} complete | Success: {len(result.errors) == 0}")
-    return {
+    return _sanitize_for_json({
         "success": len(result.errors) == 0,
         "content": {
             "product_title": result.product_title,
@@ -1064,12 +1097,12 @@ async def generate_for_product(
             "hashtags": result.hashtags,
         },
         "translations": result.translations,
-        "pamphlet_url": get_public_url(result.pamphlet_path),
-        "product_image_url": get_public_url(result.product_image_path),
+        "pamphlet_url": f"/file?path={result.pamphlet_path}" if result.pamphlet_path else None,
+        "product_image_url": f"/file?path={result.product_image_path}" if result.product_image_path else None,
         "dataset_paths": result.dataset_paths,
         "timings": result.stage_timings,
         "errors": result.errors,
-    }
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -1092,12 +1125,12 @@ async def enhance_image(image: UploadFile = File(...)):
 
     enhanced = pipeline.enhance_image(img)
     filename = f"enhanced_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-    # Save using storage abstraction
-    path = pipeline.storage.save_image(enhanced, filename, folder="outputs")
+    path = str(OUTPUT_DIR / filename)
+    enhanced.save(path, quality=95)
     print(f"[API] Enhanced image saved: {path} | Size: {enhanced.size}")
 
     return {
-        "enhanced_image_url": get_public_url(path),
+        "enhanced_image_url": f"/file?path={path}",
         "original_size": img.size,
         "enhanced_size": enhanced.size,
     }
