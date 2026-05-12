@@ -2,7 +2,6 @@
 
 import io
 import re
-import urllib.parse
 from collections import Counter
 from typing import List, Optional
 
@@ -203,30 +202,6 @@ class ProLogoFetcher:
                 img = Image.open(io.BytesIO(resp.content))
                 if img.size[0] >= 32:
                     return img.convert("RGBA")
-        except Exception:
-            pass
-        return None
-
-    @classmethod
-    def _try_ai_generated_logo(cls, brand_name: str) -> Optional[Image.Image]:
-        """Generate a clean brand logo using Pollinations AI."""
-        try:
-            clean = brand_name.replace("_", " ").strip()
-            prompt = (
-                f"minimalist professional brand logo for '{clean}', "
-                f"clean vector style, single icon, transparent background, "
-                f"simple flat design, corporate branding, "
-                f"centered on white background, high resolution"
-            )
-            encoded = urllib.parse.quote(prompt, safe="")
-            url = (
-                f"https://image.pollinations.ai/prompt/{encoded}"
-                f"?width=512&height=512&model=flux&nologo=true&enhance=true"
-            )
-            resp = requests.get(url, timeout=60)
-            if resp.status_code == 200 and len(resp.content) > 1000:
-                img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-                return img
         except Exception:
             pass
         return None

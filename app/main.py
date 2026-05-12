@@ -677,7 +677,7 @@ async def parse_prompt(prompt: str = Form(...), use_ai: str = Form("false")):
     """Parse a free-text product prompt into structured catalog data.
 
     Fast local extraction (<20ms) by default. Set use_ai=true for AI-enhanced
-    accuracy via Pollinations (adds ~3-8s).
+    accuracy via Groq.
 
     Returns extracted fields, missing required fields, and completeness score.
     """

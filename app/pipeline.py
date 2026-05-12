@@ -1,4 +1,4 @@
-# MAdVerse Pipeline orchestrator — all ad text is AI-generated via Pollinations.
+# MAdVerse Pipeline orchestrator — clean chain version.
 
 import json
 import os
@@ -29,8 +29,8 @@ from app.brands import BrandMatcher
 from app.colors import ColorExtractor
 from app.logo import ProLogoFetcher
 from app.clip_extract import CLIPContentExtractor
-from app.image_gen import ImageGenerator, LocalAdImageGenerator
-from app.content_gen import GeminiTextGenerator, GroqTextGenerator, AnthropicTextGenerator, PollinationsTextGenerator, ContentGenerator, Translator, ImageEnhancer
+from app.image_gen import ImageGenerator
+from app.content_gen import GroqTextGenerator, ContentGenerator, Translator, ImageEnhancer
 from app.designer import ProAdDesigner
 from app.database import Database
 from app.dataset_enhancer import DatasetEnhancer
@@ -57,52 +57,30 @@ class AdCraftPipeline:
 
         self._load_models()
 
-        # API tokens for image generation fallback chain
+        # API token for FLUX image generation
         self.hf_token = os.getenv("HF_TOKEN", "")
-        self.together_key = os.getenv("TOGETHER_API_KEY", "")
-        self.xai_api_key = os.getenv("XAI_API_KEY", "")
         print(f"  [INIT] HF_TOKEN: {'set (' + self.hf_token[:8] + '...)' if self.hf_token else 'NOT SET (HuggingFace models will be skipped)'}")
-        print(f"  [INIT] TOGETHER_API_KEY: {'set' if self.together_key else 'NOT SET'}")
-        print(f"  [INIT] XAI_API_KEY: {'set' if self.xai_api_key else 'NOT SET'}")
 
         self.image_gen = ImageGenerator(
             hf_token=self.hf_token or None,
-            together_key=self.together_key or None,
-            xai_api_key=self.xai_api_key or None,
         )
         print(f"  [INIT] ImageGenerator initialized:")
-        print(f"         Primary  : HuggingFace FLUX family {'(token available)' if self.hf_token else '(SKIPPED - no token)'}")
-        print(f"                    - text-to-image: FLUX.1-schnell")
-        print(f"                    - image-to-image: FLUX.1 Kontext/Redux + FLUX.2 dev/pro/max")
-        print(f"         Secondary: xAI Grok image API {'(key available)' if self.xai_api_key else '(SKIPPED - no key)'}")
-        print(f"         Tertiary : Pollinations image API (no key)")
-        print(f"         Fallback : Gradient (local PIL, always works)")
+        print(f"         FLUX only {'(token available)' if self.hf_token else '(SKIPPED - no token)'}")
+        print(f"           - text-to-image: FLUX.1-schnell")
+        print(f"           - image-to-image: FLUX.1 Kontext/Redux + FLUX.2 dev/pro/max")
 
         self.color_extractor = ColorExtractor()
         print(f"  [INIT] ColorExtractor initialized (KMeans clustering)")
         self.ad_designer = ProAdDesigner()
         print(f"  [INIT] ProAdDesigner initialized (6 theme templates)")
         self.pamphlet_composer = self.ad_designer  # backward compat
-        self.local_image_gen = LocalAdImageGenerator()
-        print(f"  [INIT] LocalAdImageGenerator initialized (8 category themes)")
         self.content_gen = ContentGenerator(self.clip_content_extractor)
-        print(f"  [INIT] ContentGenerator initialized (Gemini -> Groq -> Anthropic -> Pollinations)")
-        self.gemini_text_gen = GeminiTextGenerator()
+        print(f"  [INIT] ContentGenerator initialized (Groq)")
         self.groq_text_gen = GroqTextGenerator()
-        self.anthropic_text_gen = AnthropicTextGenerator()
-        self.pollinations_text_gen = PollinationsTextGenerator()
-        # Use best available text_gen for pipeline (category inference, image prompt)
-        for name, gen in [("Gemini", self.gemini_text_gen), ("Groq", self.groq_text_gen),
-                          ("Anthropic", self.anthropic_text_gen)]:
-            if gen.available:
-                self.text_gen = gen
-                self._text_gen_name = name
-                break
-        else:
-            self.text_gen = self.pollinations_text_gen
-            self._text_gen_name = "Pollinations"
+        # Use Groq for pipeline text tasks (category inference, prompt shaping)
+        self.text_gen = self.groq_text_gen
+        self._text_gen_name = "Groq"
         print(f"  [INIT] Pipeline text_gen: {self._text_gen_name}")
-        print(f"  [INIT] PollinationsTextGenerator initialized (URL: {PollinationsTextGenerator.URL})")
         self.translator = Translator()
         print(f"  [INIT] Translator initialized (GoogleTranslator - free, no key)")
         self.enhancer = ImageEnhancer()
@@ -1249,30 +1227,11 @@ class AdCraftPipeline:
                     result.image_generator_used = method
                     print(f"  [IMAGE] Uploaded image enhanced via model pipeline: {method}")
                 else:
-                    print(f"  [IMAGE] Model-based img2img unavailable; trying alternate model styling pass")
-                    alt_prompt = (
-                        f"{edit_prompt} Create cinematic product-ad background only. "
-                        f"Do not add extra products, logos, labels, or text."
-                    )
-                    alt_img, alt_method = self.image_gen.generate(
-                        prompt=alt_prompt,
-                        negative_prompt=DEFAULT_NEGATIVE_PROMPT,
-                        width=1080,
-                        height=1080,
-                        model_preference="flux1-schnell",
-                    )
-
+                    print(f"  [IMAGE] FLUX img2img unavailable; using local enhancement fallback")
                     enhanced_img = self.enhancer.auto_enhance(uploaded_image)
-                    if alt_img is not None and alt_method != "gradient_fallback":
-                        uploaded_palette_source = alt_img
-                        product_img = enhanced_img
-                        result.image_generator_used = f"uploaded_local_enhance+{alt_method}_style_fallback"
-                        print(f"  [IMAGE] Alternate model styling succeeded: {alt_method}")
-                    else:
-                        print(f"  [IMAGE] Alternate model styling unavailable; falling back to local enhancement")
-                        uploaded_palette_source = enhanced_img
-                        product_img = enhanced_img
-                        result.image_generator_used = "uploaded_local_enhance"
+                    uploaded_palette_source = enhanced_img
+                    product_img = enhanced_img
+                    result.image_generator_used = "uploaded_local_enhance"
                 print(f"  [IMAGE] Enhanced size: {product_img.size}")
             else:
                 print(f"  [IMAGE] Starting COMPLETE AD image generation (all text/buttons/CTAs in image):")
@@ -1285,15 +1244,12 @@ class AdCraftPipeline:
                     height=1080,
                     model_preference=image_model or None,
                 )
-
-                # Use brand colors for gradient fallback
-                if method == "gradient_fallback" and colors:
-                    print(f"  [IMAGE] Applying brand colors to gradient: {colors[:2]}")
-                    product_img = self.image_gen._make_gradient(1080, 1080, colors)
-
                 result.image_generator_used = method
                 print(f"  [IMAGE] RESULT: Generated via -> {method}")
-                print(f"  [IMAGE] Output size: {product_img.size}")
+                if product_img is not None:
+                    print(f"  [IMAGE] Output size: {product_img.size}")
+                else:
+                    print("  [IMAGE] FLUX generation failed")
 
             if product_img:
                 content.product_image = product_img
@@ -1384,18 +1340,9 @@ class AdCraftPipeline:
                         pamphlet = self.ad_designer.compose(content).convert("RGB")
                         result.image_generator_used = f"{result.image_generator_used}+designer"
                 else:
-                    if result.image_generator_used == "gradient_fallback":
-                        # HF image generation was unavailable; build a proper prompt-based pamphlet
-                        # instead of returning a plain gradient.
-                        print("  [DESIGN] Gradient fallback detected - composing rich typography pamphlet from prompt")
-                        content.product_image = None
-                        content.theme_name = "premium_dark"
-                        pamphlet = self.ad_designer.compose(content).convert("RGB")
-                        result.image_generator_used = "gradient_fallback+designer"
-                    else:
-                        # For text-only generation, the AI model already returns a complete ad.
-                        print("  [DESIGN] Using AI-generated image directly as final ad")
-                        pamphlet = product_img.convert("RGB")
+                    # For text-only generation, FLUX returns a complete ad image.
+                    print("  [DESIGN] Using AI-generated image directly as final ad")
+                    pamphlet = product_img.convert("RGB")
 
                 if pamphlet.size != (1080, 1080):
                     print(f"  [DESIGN] Resizing from {pamphlet.size} to 1080x1080")
@@ -1483,7 +1430,7 @@ class AdCraftPipeline:
         print(f"  [SUMMARY] Query: \"{query}\"")
         print(f"  [SUMMARY] Brand: {result.brand_match.get('matched_brand', 'Unknown') if result.brand_match else 'None'}")
         print(f"  [SUMMARY] Image model used: {result.image_generator_used or 'None'}")
-        print(f"  [SUMMARY] Text model: openai (via Pollinations)")
+        print(f"  [SUMMARY] Text model: Groq")
         print(f"  [SUMMARY] Translation engine: GoogleTranslator")
         print(f"  [SUMMARY] Languages: {result.languages_generated}")
         print(f"  [SUMMARY] Errors: {len(result.errors)}")
@@ -1516,7 +1463,7 @@ class AdCraftPipeline:
         category = brand_match.category or "general"
         subcategory = brand_match.subcategory or ""
         print(f"  [DESCRIBE] Brand: {brand} | Category: {category}/{subcategory}")
-        print(f"  [DESCRIBE] Model: openai (via Pollinations AI)")
+        print(f"  [DESCRIBE] Model: Groq")
 
         result = self.content_gen.generate_product_content(
             brand, category, subcategory, [], "", query
